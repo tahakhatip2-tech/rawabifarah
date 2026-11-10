@@ -1,0 +1,190 @@
+"use client";
+
+import { useState } from "react";
+import { signIn } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Eye, EyeOff, Lock, Mail } from "lucide-react";
+import Image from "next/image";
+import Button from "@/components/ui/Button";
+import Input from "@/components/ui/Input";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
+
+const loginSchema = z.object({
+  email: z.string().email("بريد إلكتروني غير صالح"),
+  password: z.string().min(6, "كلمة المرور 6 أحرف على الأقل"),
+});
+type LoginForm = z.infer<typeof loginSchema>;
+
+export default function LoginPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") ?? "/admin/dashboard";
+
+  const [showPassword, setShowPassword] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<LoginForm>({ resolver: zodResolver(loginSchema) });
+
+  const onSubmit = async (data: LoginForm) => {
+    setAuthError(null);
+    const result = await signIn("credentials", {
+      ...data,
+      redirect: false,
+    });
+
+    if (result?.error) {
+      setAuthError("البريد الإلكتروني أو كلمة المرور غير صحيحة");
+    } else {
+      router.push(callbackUrl);
+      router.refresh();
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex" dir="rtl">
+      {/* ── Left Panel (Decorative with Bakery Image) ─────────────────── */}
+      <div className="hidden lg:flex flex-1 flex-col items-center justify-center relative overflow-hidden bg-stone-950">
+        <img
+          src="/images/hero-home.jpg"
+          alt="مخبوزات روابي الفرح"
+          className="absolute inset-0 w-full h-full object-cover brightness-[0.25] scale-105"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/70 to-amber-950/50" />
+
+        <div className="relative z-10 text-center text-white px-12">
+          <div className="w-24 h-24 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-6 backdrop-blur-sm border border-white/20 p-2 overflow-hidden shadow-xl">
+            <Image
+              src="/rwabifarah.png"
+              alt="شعار روابي الفرح"
+              width={80}
+              height={80}
+              className="object-contain w-full h-full"
+            />
+          </div>
+          <h1 className="text-4xl font-bold mb-3">روابي الفرح</h1>
+          <p className="text-xl text-amber-200 mb-8">منصة إدارة المخبزة</p>
+
+          <div className="grid grid-cols-1 gap-4 text-sm text-white/70">
+            {[
+              "🏪 إدارة الفروع والمستودعات",
+              "🍞 تخطيط الإنتاج والوصفات",
+              "💰 نقاط البيع والمتجر الإلكتروني",
+              "📊 التقارير والذكاء التجاري",
+            ].map((item) => (
+              <div
+                key={item}
+                className="bg-white/5 backdrop-blur-sm border border-white/10 rounded-lg p-3 text-right"
+              >
+                {item}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── Right Panel (Login Form) ────────────────── */}
+      <div className="flex-1 lg:max-w-md flex flex-col items-center justify-center p-8 bg-[var(--color-bg)] relative transition-colors">
+        <div className="absolute top-6 left-6">
+          <ThemeToggle />
+        </div>
+        <div className="w-full max-w-sm animate-fadeIn">
+          {/* Logo Mobile */}
+          <div className="flex items-center gap-3 mb-8 lg:hidden">
+            <div className="w-12 h-12 rounded-xl bg-stone-900 border border-amber-500/30 flex items-center justify-center p-1 overflow-hidden shadow-sm">
+              <Image
+                src="/rwabifarah.png"
+                alt="شعار روابي الفرح"
+                width={40}
+                height={40}
+                className="object-contain w-full h-full"
+              />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-[var(--color-text)]">روابي الفرح</h1>
+              <p className="text-xs text-[var(--color-text-subtle)]">منصة إدارة المخبزة</p>
+            </div>
+          </div>
+
+          <h2 className="text-2xl font-bold text-[var(--color-text)] mb-1">
+            تسجيل الدخول
+          </h2>
+          <p className="text-sm text-[var(--color-text-muted)] mb-8">
+            أدخل بيانات حسابك للمتابعة
+          </p>
+
+          {authError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 flex items-center gap-2">
+              <span>⚠️</span> {authError}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" noValidate>
+            <Input
+              {...register("email")}
+              type="email"
+              label="البريد الإلكتروني"
+              placeholder="example@bakery.com"
+              icon={<Mail className="w-4 h-4" />}
+              error={errors.email?.message}
+              autoComplete="email"
+              required
+            />
+
+            <div className="relative">
+              <Input
+                {...register("password")}
+                type={showPassword ? "text" : "password"}
+                label="كلمة المرور"
+                placeholder="••••••••"
+                icon={<Lock className="w-4 h-4" />}
+                error={errors.password?.message}
+                autoComplete="current-password"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute end-3 top-[34px] p-1 text-[var(--color-text-subtle)] hover:text-[var(--color-text)] transition-colors"
+                aria-label={showPassword ? "إخفاء كلمة المرور" : "إظهار كلمة المرور"}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-end">
+              <a
+                href="/forgot-password"
+                className="text-sm text-[var(--color-primary)] hover:underline"
+              >
+                نسيت كلمة المرور؟
+              </a>
+            </div>
+
+            <Button
+              type="submit"
+              fullWidth
+              size="lg"
+              isLoading={isSubmitting}
+            >
+              {isSubmitting ? "جارٍ تسجيل الدخول..." : "تسجيل الدخول"}
+            </Button>
+          </form>
+
+          <p className="mt-6 text-center text-sm text-[var(--color-text-subtle)]">
+            للعملاء:&nbsp;
+            <a href="/register" className="text-[var(--color-primary)] font-medium hover:underline">
+              إنشاء حساب جديد
+            </a>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
