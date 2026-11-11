@@ -38,10 +38,10 @@ export function BottomNavBar() {
     >
       <div className="relative bg-[#fdfaf5]/95 dark:bg-[#161009]/95 backdrop-blur-xl border-t md:border border-amber-900/15 dark:border-amber-500/25 md:rounded-3xl shadow-[0_-8px_30px_rgba(26,18,9,0.08)] dark:shadow-[0_-8px_32px_rgba(0,0,0,0.55)] md:shadow-2xl px-2 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
         <div className="grid grid-cols-5 items-end gap-1">
-          {/* 1. المنيو */}
+          {/* 1. المنتجات */}
           <NavTab
             href="/menu"
-            label="المنيو"
+            label="المنتجات"
             active={isMenuActive}
             icon={Croissant}
           />

@@ -65,7 +65,7 @@ export function Navbar() {
             <nav className="hide-mobile flex items-center gap-6 text-sm font-semibold">
               {[
                 { href: "/", label: "الرئيسية" },
-                { href: "/menu", label: "قائمة المخبوزات" },
+                { href: "/menu", label: "قائمة المنتجات" },
                 { href: "/news", label: "آخر الأخبار" },
                 { href: "/#branches", label: "فروعنا" },
                 { href: "/#about", label: "عن المخبز" },
@@ -138,7 +138,7 @@ export function Navbar() {
           >
             {[
               { href: "/", label: "الرئيسية" },
-              { href: "/menu", label: "قائمة المخبوزات" },
+              { href: "/menu", label: "قائمة المنتجات" },
               { href: "/orders", label: "طلباتي" },
               { href: "/news", label: "آخر الأخبار" },
               { href: "/b2b", label: "توريد للمحلات والمطاعم" },
