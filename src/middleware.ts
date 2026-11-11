@@ -39,6 +39,7 @@ export default auth((req) => {
     "/api/products",
     "/api/categories",
     "/api/news",
+    "/api/chat",
   ];
   const isPublic = publicPaths.some((p) => pathname === p || pathname.startsWith(p + "/"));
   if (isPublic) return NextResponse.next();
