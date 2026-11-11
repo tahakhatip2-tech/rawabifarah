@@ -1,7 +1,26 @@
 import crypto from "crypto";
-import { withAuth, ok, err } from "@/lib/api";
+import { withAuth, ok, err, type ApiContext } from "@/lib/api";
+import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 
-const UPLOAD_FOLDER = "rawabifarah/news";
+const ALLOWED_FOLDERS: Record<string, string> = {
+  news: "rawabifarah/news",
+  products: "rawabifarah/products",
+};
+
+function resolveUploadFolder(raw?: string | null) {
+  if (raw && raw in ALLOWED_FOLDERS) {
+    return ALLOWED_FOLDERS[raw];
+  }
+  return ALLOWED_FOLDERS.news;
+}
+
+function canUserUpload(ctx: ApiContext) {
+  return (
+    hasPermission(ctx.permissions, ctx.role, PERMISSIONS.CMS_CREATE) ||
+    hasPermission(ctx.permissions, ctx.role, PERMISSIONS.PRODUCTS_CREATE) ||
+    hasPermission(ctx.permissions, ctx.role, PERMISSIONS.PRODUCTS_UPDATE)
+  );
+}
 
 function cleanEnvValue(value?: string) {
   return value?.trim().replace(/^["']|["']$/g, "") || "";
@@ -26,8 +45,8 @@ function validateCloudinarySecret(apiSecret: string) {
   return null;
 }
 
-function buildUploadSignature(apiSecret: string, timestamp: string) {
-  const signaturePayload = `folder=${UPLOAD_FOLDER}&timestamp=${timestamp}${apiSecret}`;
+function buildUploadSignature(apiSecret: string, timestamp: string, folder: string) {
+  const signaturePayload = `folder=${folder}&timestamp=${timestamp}${apiSecret}`;
   return crypto.createHash("sha1").update(signaturePayload).digest("hex");
 }
 
@@ -35,8 +54,12 @@ function buildUploadSignature(apiSecret: string, timestamp: string) {
  * Generates a short-lived Cloudinary signed upload payload so images and large videos
  * can be uploaded directly from the admin's device without hitting Vercel's 4.5 MB body limit.
  */
-export const GET = withAuth(async () => {
+export const GET = withAuth(async (req, ctx) => {
   try {
+    if (!canUserUpload(ctx)) {
+      return err("ليس لديك صلاحية رفع الملفات", 403);
+    }
+
     const config = getCloudinaryConfig();
     if (!config) {
       return err(
@@ -50,24 +73,29 @@ export const GET = withAuth(async () => {
       return err(secretError, 400);
     }
 
+    const folder = resolveUploadFolder(req.nextUrl.searchParams.get("folder"));
     const timestamp = Math.floor(Date.now() / 1000).toString();
-    const signature = buildUploadSignature(config.apiSecret, timestamp);
+    const signature = buildUploadSignature(config.apiSecret, timestamp, folder);
 
     return ok({
       cloudName: config.cloudName,
       apiKey: config.apiKey,
       timestamp,
-      folder: UPLOAD_FOLDER,
+      folder,
       signature,
     });
   } catch (error) {
     console.error("[Upload Signature GET Error]:", error);
     return err("تعذر تجهيز توقيع الرفع السحابي", 500);
   }
-}, "cms:create");
+});
 
-export const POST = withAuth(async (req) => {
+export const POST = withAuth(async (req, ctx) => {
   try {
+    if (!canUserUpload(ctx)) {
+      return err("ليس لديك صلاحية رفع الملفات", 403);
+    }
+
     const config = getCloudinaryConfig();
 
     if (!config) {
@@ -75,6 +103,11 @@ export const POST = withAuth(async (req) => {
         "خدمة رفع الوسائط (Cloudinary) غير مفعلة بعد. أضف المتغيرات CLOUDINARY_CLOUD_NAME و CLOUDINARY_API_KEY و CLOUDINARY_API_SECRET في إعدادات Vercel ثم أعد النشر.",
         400
       );
+    }
+
+    const secretError = validateCloudinarySecret(config.apiSecret);
+    if (secretError) {
+      return err(secretError, 400);
     }
 
     const formData = await req.formData();
@@ -89,14 +122,15 @@ export const POST = withAuth(async (req) => {
       return err("حجم الملف يتجاوز الحد المسموح (100 ميجابايت)", 400);
     }
 
+    const folder = resolveUploadFolder(req.nextUrl.searchParams.get("folder"));
     const timestamp = Math.floor(Date.now() / 1000).toString();
-    const signature = buildUploadSignature(config.apiSecret, timestamp);
+    const signature = buildUploadSignature(config.apiSecret, timestamp, folder);
 
     const uploadData = new FormData();
     uploadData.append("file", file);
     uploadData.append("api_key", config.apiKey);
     uploadData.append("timestamp", timestamp);
-    uploadData.append("folder", UPLOAD_FOLDER);
+    uploadData.append("folder", folder);
     uploadData.append("signature", signature);
 
     const res = await fetch(
@@ -123,4 +157,4 @@ export const POST = withAuth(async (req) => {
     console.error("[Upload POST Error]:", error);
     return err("حدث خطأ أثناء رفع الملف", 500);
   }
-}, "cms:create");
+});
