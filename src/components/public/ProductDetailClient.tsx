@@ -22,6 +22,8 @@ import {
   Copy,
   Check,
   ShieldCheck,
+  Truck,
+  Flame,
 } from "lucide-react";
 import { useCartStore } from "@/lib/cart-store";
 import { formatCurrency } from "@/lib/currency";
@@ -72,12 +74,25 @@ const ALLERGEN_LABELS: Record<string, string> = {
   sesame: "سمسم",
 };
 
-interface ProductDetailClientProps {
-  product: ProductDetailData;
-  related: PublicProductCardItem[];
+interface CategoryLinkItem {
+  id: string;
+  nameAr: string;
+  slug: string;
 }
 
-export function ProductDetailClient({ product, related }: ProductDetailClientProps) {
+interface ProductDetailClientProps {
+  product: ProductDetailData;
+  sameCategory: PublicProductCardItem[];
+  suggested: PublicProductCardItem[];
+  categories: CategoryLinkItem[];
+}
+
+export function ProductDetailClient({
+  product,
+  sameCategory,
+  suggested,
+  categories,
+}: ProductDetailClientProps) {
   const addItem = useCartStore((state) => state.addItem);
 
   const galleryImages =
@@ -498,30 +513,146 @@ export function ProductDetailClient({ product, related }: ProductDetailClientPro
         </div>
       </div>
 
-      {/* Related Products */}
-      {related.length > 0 && (
+      {/* Bakery Quality Guarantees */}
+      <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="flex items-center gap-3.5 p-4 rounded-2xl bg-white dark:bg-stone-900/70 border border-amber-900/10 dark:border-stone-800 shadow-xs">
+          <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <Flame className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-xs font-extrabold text-stone-900 dark:text-white">
+              خَبز طازج على مدار الساعة
+            </h3>
+            <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
+              يُحضّر يومياً في أفران روابي الفرح بأجود المكونات
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3.5 p-4 rounded-2xl bg-white dark:bg-stone-900/70 border border-amber-900/10 dark:border-stone-800 shadow-xs">
+          <div className="w-11 h-11 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+            <Truck className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-xs font-extrabold text-stone-900 dark:text-white">
+              توصيل سريع ومجهّز في عمّان
+            </h3>
+            <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
+              تغليف محكم يحافظ على النكهة والطراوة حتى باب بيتك
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3.5 p-4 rounded-2xl bg-white dark:bg-stone-900/70 border border-amber-900/10 dark:border-stone-800 shadow-xs">
+          <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+            <ShieldCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-xs font-extrabold text-stone-900 dark:text-white">
+              جودة ونظافة مضمونة 100%
+            </h3>
+            <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
+              رقابة غذائية صارمة ومطابقة لمعايير الغذاء والدواء
+            </p>
+          </div>
+        </div>
+      </section>
+
+      {/* Same Category Products */}
+      {sameCategory.length > 0 && (
         <section className="pt-8 border-t border-amber-900/10 dark:border-stone-800 space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <div>
               <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
                 من نفس التصنيف
               </span>
               <h2 className="text-xl sm:text-2xl font-black text-stone-900 dark:text-white mt-0.5">
-                أصناف قد تعجبك أيضاً
+                منتجات مشابهة في {product.category?.nameAr || "القسم"}
               </h2>
             </div>
             <Link
-              href="/menu"
-              className="text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1"
+              href={
+                product.category
+                  ? `/menu?category=${product.category.id}`
+                  : "/menu"
+              }
+              className="text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 shrink-0"
             >
-              <span>كافة القائمة</span>
+              <span>عرض القسم كاملاً</span>
               <ChevronLeft className="w-4 h-4" />
             </Link>
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6">
-            {related.map((item) => (
+            {sameCategory.map((item) => (
               <ProductCard key={item.id} product={item} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Complementary / Suggested Bakery Picks */}
+      {suggested.length > 0 && (
+        <section className="pt-8 border-t border-amber-900/10 dark:border-stone-800 space-y-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <span className="text-xs font-bold text-amber-600 dark:text-amber-400">
+                مختارات أفران روابي فرح
+              </span>
+              <h2 className="text-xl sm:text-2xl font-black text-stone-900 dark:text-white mt-0.5">
+                أصناف أخرى قد تعجبك أيضاً
+              </h2>
+            </div>
+            <Link
+              href="/menu"
+              className="text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 shrink-0"
+            >
+              <span>تصفح كل القائمة</span>
+              <ChevronLeft className="w-4 h-4" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-6">
+            {suggested.map((item) => (
+              <ProductCard key={item.id} product={item} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Quick Category Explorer */}
+      {categories.length > 0 && (
+        <section className="p-6 sm:p-8 rounded-3xl bg-[#f8efe0]/80 dark:bg-stone-900/70 border border-amber-900/10 dark:border-stone-800 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="text-base sm:text-lg font-black text-stone-900 dark:text-white">
+                تصفح باقي أقسام المخبز
+              </h3>
+              <p className="text-xs text-stone-600 dark:text-stone-400">
+                اكتشف تشكيلاتنا الطازجة من الخبز والمعجنات والحلويات الشرقية والكيك
+              </p>
+            </div>
+            <Link
+              href="/menu"
+              className="text-xs font-bold text-amber-700 dark:text-amber-400 hover:underline shrink-0"
+            >
+              كل الأقسام ←
+            </Link>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            {categories.map((cat) => (
+              <Link
+                key={cat.id}
+                href={`/menu?category=${cat.id}`}
+                className={`px-4 py-2 rounded-xl text-xs font-bold border transition ${
+                  cat.id === product.category?.id
+                    ? "bg-amber-600 text-white border-amber-600 shadow-xs"
+                    : "bg-white dark:bg-stone-950 text-stone-700 dark:text-stone-300 border-amber-900/10 dark:border-stone-800 hover:border-amber-500 hover:text-amber-700 dark:hover:text-amber-400"
+                }`}
+              >
+                {cat.nameAr}
+              </Link>
             ))}
           </div>
         </section>

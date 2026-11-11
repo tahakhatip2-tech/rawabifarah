@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db";
 import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 import { withAuth, ok, err, auditLog } from "@/lib/api";
+import { getProductWithRelated } from "@/lib/products";
 import { UserRole } from "@prisma/client";
 
 const OBJECT_ID_REGEX = /^[a-fA-F0-9]{24}$/;
@@ -15,36 +16,20 @@ function sanitizeImages(input: unknown): string[] {
     .slice(0, 5);
 }
 
-async function findProductByIdOrSlug(idOrSlug: string) {
-  const isObjectId = OBJECT_ID_REGEX.test(idOrSlug);
-  return prisma.product.findFirst({
-    where: isObjectId ? { OR: [{ id: idOrSlug }, { slug: idOrSlug }] } : { slug: idOrSlug },
-    include: {
-      category: {
-        select: { id: true, nameAr: true, nameEn: true, slug: true },
-      },
-      variants: {
-        where: { isActive: true },
-      },
-      inventoryItems: {
-        select: { qtyOnHand: true, warehouseId: true },
-      },
-    },
-  });
-}
-
-// Public GET single product details (+ related products)
+// Public GET single product details (+ same-category & suggested products)
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const { id } = await params;
-    const product = await findProductByIdOrSlug(id);
+    const result = await getProductWithRelated(id);
 
-    if (!product) {
+    if (!result) {
       return err("المنتج غير موجود", 404);
     }
+
+    const { product, sameCategory, suggested, categories } = result;
 
     if (!product.isActive) {
       const session = await auth();
@@ -60,22 +45,9 @@ export async function GET(
       }
     }
 
-    const related = await prisma.product.findMany({
-      where: {
-        isActive: true,
-        categoryId: product.categoryId,
-        id: { not: product.id },
-      },
-      take: 3,
-      orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }],
-      include: {
-        category: {
-          select: { id: true, nameAr: true, nameEn: true, slug: true },
-        },
-      },
-    });
+    const related = sameCategory.length > 0 ? sameCategory : suggested;
 
-    return ok({ product, related });
+    return ok({ product, related, sameCategory, suggested, categories });
   } catch (error) {
     console.error("[Product GET by ID Error]:", error);
     return err("فشل جلب تفاصيل المنتج", 500);

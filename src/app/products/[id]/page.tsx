@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { prisma } from "@/lib/db";
+import { getProductWithRelated } from "@/lib/products";
 import { Navbar } from "@/components/public/Navbar";
 import { Footer } from "@/components/public/Footer";
 import {
@@ -11,42 +11,32 @@ import { PublicProductCardItem } from "@/components/public/ProductCard";
 
 export const dynamic = "force-dynamic";
 
-const OBJECT_ID_REGEX = /^[a-fA-F0-9]{24}$/;
-
-async function getProductAndRelated(idOrSlug: string) {
-  const isObjectId = OBJECT_ID_REGEX.test(idOrSlug);
-  const product = await prisma.product.findFirst({
-    where: isObjectId
-      ? { isActive: true, OR: [{ id: idOrSlug }, { slug: idOrSlug }] }
-      : { isActive: true, slug: idOrSlug },
-    include: {
-      category: {
-        select: { id: true, nameAr: true, nameEn: true, slug: true },
-      },
-      variants: {
-        where: { isActive: true },
-      },
-    },
-  });
-
-  if (!product) return null;
-
-  const related = await prisma.product.findMany({
-    where: {
-      isActive: true,
-      categoryId: product.categoryId,
-      id: { not: product.id },
-    },
-    take: 3,
-    orderBy: [{ isFeatured: "desc" }, { sortOrder: "asc" }],
-    include: {
-      category: {
-        select: { id: true, nameAr: true, slug: true },
-      },
-    },
-  });
-
-  return { product, related };
+function mapToCardItem(item: {
+  id: string;
+  slug: string;
+  nameAr: string;
+  nameEn: string;
+  descriptionAr: string | null;
+  retailPrice: number;
+  unit: string;
+  images: string[];
+  isFeatured: boolean;
+  isSeasonal: boolean;
+  category: { id: string; nameAr: string; slug: string } | null;
+}): PublicProductCardItem {
+  return {
+    id: item.id,
+    slug: item.slug,
+    nameAr: item.nameAr,
+    nameEn: item.nameEn,
+    descriptionAr: item.descriptionAr,
+    retailPrice: item.retailPrice,
+    unit: item.unit,
+    images: item.images || [],
+    isFeatured: item.isFeatured,
+    isSeasonal: item.isSeasonal,
+    category: item.category,
+  };
 }
 
 export async function generateMetadata({
@@ -55,8 +45,8 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const result = await getProductAndRelated(id);
-  if (!result) {
+  const result = await getProductWithRelated(id);
+  if (!result || !result.product.isActive) {
     return { title: "المنتج غير موجود | روابي فرح" };
   }
   const { product } = result;
@@ -80,13 +70,13 @@ export default async function ProductDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const result = await getProductAndRelated(id);
+  const result = await getProductWithRelated(id);
 
-  if (!result) {
+  if (!result || !result.product.isActive) {
     notFound();
   }
 
-  const { product, related } = result;
+  const { product, sameCategory, suggested, categories } = result;
 
   const detailData: ProductDetailData = {
     id: product.id,
@@ -118,28 +108,18 @@ export default async function ProductDetailPage({
     })),
   };
 
-  const relatedItems: PublicProductCardItem[] = related.map((item) => ({
-    id: item.id,
-    slug: item.slug,
-    nameAr: item.nameAr,
-    nameEn: item.nameEn,
-    descriptionAr: item.descriptionAr,
-    retailPrice: item.retailPrice,
-    unit: item.unit,
-    images: item.images || [],
-    isFeatured: item.isFeatured,
-    isSeasonal: item.isSeasonal,
-    category: item.category,
-  }));
-
   return (
     <div className="min-h-screen bg-[#fdfaf5] text-stone-900 dark:bg-stone-950 dark:text-stone-100 flex flex-col font-sans transition-colors duration-300">
       <Navbar />
       <main className="flex-1">
-        <ProductDetailClient product={detailData} related={relatedItems} />
+        <ProductDetailClient
+          product={detailData}
+          sameCategory={sameCategory.map(mapToCardItem)}
+          suggested={suggested.map(mapToCardItem)}
+          categories={categories}
+        />
       </main>
       <Footer />
     </div>
   );
 }
-
