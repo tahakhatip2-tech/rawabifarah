@@ -27,8 +27,10 @@ import {
   PanelRightOpen,
   ShieldCheck,
   ExternalLink,
+  Bot,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme/ThemeToggle";
+import { AdminSecretaryWidget } from "@/components/admin/AdminSecretaryWidget";
 
 interface AdminShellProps {
   children: React.ReactNode;
@@ -87,6 +89,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/finance", label: "المالية والمصاريف", icon: Wallet, soon: true },
       { href: "/admin/reports", label: "التقارير والتحليلات", icon: BarChart3, soon: true },
       { href: "/admin/cms", label: "إدارة المحتوى والأخبار", icon: FileText },
+      { href: "/admin/secretary", label: "سكرتير المدير وإعداداته", icon: Bot },
       { href: "/admin/settings", label: "إعدادات النظام", icon: Settings, soon: true },
     ],
   },
@@ -408,6 +411,9 @@ export function AdminShell({ children, user }: AdminShellProps) {
           {children}
         </main>
       </div>
+
+      {/* Executive Secretary Floating Assistant */}
+      <AdminSecretaryWidget userRole={user.role} />
     </div>
   );
 }
