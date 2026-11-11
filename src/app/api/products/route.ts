@@ -121,12 +121,19 @@ export const POST = withAuth(
         isSeasonal = false,
       } = body;
 
-      if (!sku || !nameAr || !nameEn || !slug || !categoryId || retailPrice === undefined) {
+      if (!nameAr || !categoryId || retailPrice === undefined) {
         return err("يرجى ملء كافة الحقول الإلزامية للمنتج", 400);
       }
 
+      const resolvedSku =
+        sku && String(sku).trim() ? String(sku).trim() : `PRD-${Date.now().toString().slice(-6)}`;
+      const resolvedNameEn =
+        nameEn && String(nameEn).trim() ? String(nameEn).trim() : String(nameAr).trim();
+      const resolvedSlug =
+        slug && String(slug).trim() ? String(slug).trim().toLowerCase() : resolvedSku.toLowerCase();
+
       const existing = await prisma.product.findFirst({
-        where: { OR: [{ sku }, { slug }] },
+        where: { OR: [{ sku: resolvedSku }, { slug: resolvedSlug }] },
       });
 
       if (existing) {
@@ -137,10 +144,10 @@ export const POST = withAuth(
 
       const product = await prisma.product.create({
         data: {
-          sku: String(sku).trim(),
+          sku: resolvedSku,
           nameAr: String(nameAr).trim(),
-          nameEn: String(nameEn).trim(),
-          slug: String(slug).trim().toLowerCase(),
+          nameEn: resolvedNameEn,
+          slug: resolvedSlug,
           descriptionAr: descriptionAr ? String(descriptionAr).trim() : null,
           descriptionEn: descriptionEn ? String(descriptionEn).trim() : null,
           ingredientsAr: ingredientsAr ? String(ingredientsAr).trim() : null,

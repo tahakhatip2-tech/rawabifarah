@@ -39,14 +39,6 @@ interface ProductFormProps {
   initialProduct?: ProductFormInitialData;
 }
 
-const ALLERGENS_LIST = [
-  { id: "gluten", label: "جلوتين القمح" },
-  { id: "dairy", label: "حليب ومشتقاته" },
-  { id: "eggs", label: "بيض" },
-  { id: "nuts", label: "مكسرات وفستق" },
-  { id: "sesame", label: "سمسم" },
-];
-
 export function ProductForm({ mode, initialProduct }: ProductFormProps) {
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
@@ -58,7 +50,7 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
   } | null>(null);
 
   const [formData, setFormData] = useState({
-    sku: initialProduct?.sku || `PRD-${Date.now().toString().slice(-4)}`,
+    sku: initialProduct?.sku || `PRD-${Date.now().toString().slice(-6)}`,
     slug: initialProduct?.slug || "",
     nameAr: initialProduct?.nameAr || "",
     nameEn: initialProduct?.nameEn || "",
@@ -106,15 +98,6 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleAllergenToggle = (id: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      allergens: prev.allergens.includes(id)
-        ? prev.allergens.filter((a) => a !== id)
-        : [...prev.allergens, id],
-    }));
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
@@ -138,6 +121,7 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formData,
+          nameEn: formData.nameEn.trim() || formData.nameAr.trim(),
           slug: formData.slug.trim() || formData.sku.trim().toLowerCase(),
           retailPrice: parseFloat(formData.retailPrice),
           costPrice: parseFloat(formData.costPrice || "0"),
@@ -257,21 +241,6 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
 
             <div>
               <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                اسم المنتج بالإنجليزية *
-              </label>
-              <input
-                type="text"
-                required
-                dir="ltr"
-                value={formData.nameEn}
-                onChange={(e) => setFormData({ ...formData, nameEn: e.target.value })}
-                placeholder="Taboon Bread"
-                className="w-full px-4 py-2.5 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs text-stone-900 dark:text-stone-100 focus:outline-none focus:border-amber-500 text-right"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
                 التصنيف *
               </label>
               <select
@@ -295,20 +264,6 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
-                رمز الصنف (SKU) *
-              </label>
-              <input
-                type="text"
-                required
-                dir="ltr"
-                value={formData.sku}
-                onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-                className="w-full px-4 py-2.5 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs text-stone-900 dark:text-stone-100 font-mono focus:outline-none focus:border-amber-500 text-right"
-              />
-            </div>
-
             <div className="sm:col-span-2">
               <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
                 الرابط المختصر (Slug)
@@ -318,7 +273,7 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
                 dir="ltr"
                 value={formData.slug}
                 onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
-                placeholder="taboon-bread (يُنشأ تلقائياً من الـ SKU إذا تُرك فارغاً)"
+                placeholder="taboon-bread (يُنشأ تلقائياً إذا تُرك فارغاً)"
                 className="w-full px-4 py-2.5 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs text-stone-900 dark:text-stone-100 font-mono focus:outline-none focus:border-amber-500 text-right"
               />
             </div>
@@ -451,10 +406,10 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
           </div>
         </div>
 
-        {/* Allergens & Flags */}
+        {/* Flags */}
         <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 space-y-5">
           <h2 className="text-xs font-bold text-stone-700 dark:text-stone-300 border-b border-stone-200 dark:border-stone-800 pb-2">
-            الوسوم، الحالة ومسببات الحساسية
+            الوسوم وحالة الظهور
           </h2>
 
           <div className="flex flex-wrap gap-5">
@@ -487,31 +442,6 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
               />
               <span>منتج موسمي</span>
             </label>
-          </div>
-
-          <div className="space-y-2.5">
-            <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300">
-              يحتوي على مسببات الحساسية التالية:
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {ALLERGENS_LIST.map((a) => {
-                const checked = formData.allergens.includes(a.id);
-                return (
-                  <button
-                    key={a.id}
-                    type="button"
-                    onClick={() => handleAllergenToggle(a.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition ${
-                      checked
-                        ? "bg-amber-600 text-white border-amber-600"
-                        : "bg-stone-50 dark:bg-stone-800 text-stone-600 dark:text-stone-400 border-stone-200 dark:border-stone-700"
-                    }`}
-                  >
-                    {a.label}
-                  </button>
-                );
-              })}
-            </div>
           </div>
         </div>
 
