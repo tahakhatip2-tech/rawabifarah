@@ -73,6 +73,8 @@ export function CmsNewsManager({
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [localPreviewUrl, setLocalPreviewUrl] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [busyPostId, setBusyPostId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{
     kind: "success" | "error";
@@ -117,7 +119,7 @@ export function CmsNewsManager({
       content:
         content.trim() ||
         "اكتب نص المنشور أو المقالة هنا لتظهر لك معاينة حية مطابقة تماماً لما سيراه زوار روابي فرح...",
-      mediaUrl: mediaUrl.trim() || null,
+      mediaUrl: mediaUrl.trim() || localPreviewUrl || null,
       isPinned,
       isPublished,
       likesCount: 24,
@@ -128,15 +130,28 @@ export function CmsNewsManager({
       likedByMe: false,
       comments: [],
     }),
-    [editingId, type, title, content, mediaUrl, isPinned, isPublished, authorName]
+    [editingId, type, title, content, mediaUrl, localPreviewUrl, isPinned, isPublished, authorName]
   );
+
+  function clearLocalPreview() {
+    if (localPreviewUrl) {
+      URL.revokeObjectURL(localPreviewUrl);
+      setLocalPreviewUrl(null);
+    }
+  }
+
+  function clearMedia() {
+    clearLocalPreview();
+    setMediaUrl("");
+    setUploadError(null);
+  }
 
   function resetComposer() {
     setEditingId(null);
     setType("IMAGE");
     setTitle("");
     setContent("");
-    setMediaUrl("");
+    clearMedia();
     setIsPinned(false);
     setIsPublished(true);
   }
@@ -146,7 +161,9 @@ export function CmsNewsManager({
     setType(post.type);
     setTitle(post.title || "");
     setContent(post.content);
+    clearLocalPreview();
     setMediaUrl(post.mediaUrl || "");
+    setUploadError(null);
     setIsPinned(post.isPinned);
     setIsPublished(post.isPublished);
     setFeedback(null);
@@ -159,16 +176,26 @@ export function CmsNewsManager({
 
     const maxBytes = 100 * 1024 * 1024; // 100 MB
     if (file.size > maxBytes) {
-      setFeedback({
-        kind: "error",
-        text: "حجم الملف يتجاوز الحد المسموح (100 ميجابايت).",
-      });
+      const msg = "حجم الملف يتجاوز الحد المسموح (100 ميجابايت).";
+      setUploadError(msg);
+      setFeedback({ kind: "error", text: msg });
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
 
+    // Show immediate local preview in the upload box while uploading
+    clearLocalPreview();
+    const objectUrl = URL.createObjectURL(file);
+    setLocalPreviewUrl(objectUrl);
+    if (file.type.startsWith("video/")) {
+      setType("VIDEO");
+    } else if (type === "TEXT") {
+      setType("IMAGE");
+    }
+
     setUploading(true);
     setUploadProgress(0);
+    setUploadError(null);
     setFeedback(null);
 
     try {
@@ -177,12 +204,11 @@ export function CmsNewsManager({
       const sigJson = await sigRes.json();
 
       if (!sigRes.ok || !sigJson.success) {
-        setFeedback({
-          kind: "error",
-          text:
-            sigJson.error ||
-            "خدمة رفع الوسائط غير مفعلة حالياً. يرجى تفعيل متغيرات Cloudinary في إعدادات Vercel.",
-        });
+        const msg =
+          sigJson.error ||
+          "خدمة رفع الوسائط غير مفعلة حالياً. يرجى التحقق من متغيرات Cloudinary في Vercel.";
+        setUploadError(msg);
+        setFeedback({ kind: "error", text: msg });
         return;
       }
 
@@ -220,7 +246,16 @@ export function CmsNewsManager({
             if (xhr.status >= 200 && xhr.status < 300 && parsed.secure_url) {
               resolve(parsed);
             } else {
-              reject(new Error(parsed?.error?.message || "فشل رفع الملف إلى Cloudinary"));
+              const rawMsg = String(parsed?.error?.message || "");
+              if (rawMsg.toLowerCase().includes("invalid signature")) {
+                reject(
+                  new Error(
+                    "فشل توقيع Cloudinary (Invalid Signature). تأكد من نسخ CLOUDINARY_API_SECRET الحقيقي في إعدادات Vercel بدون مسافات أو نجوم *** ثم عمل Redeploy."
+                  )
+                );
+              } else {
+                reject(new Error(rawMsg || "فشل رفع الملف إلى Cloudinary"));
+              }
             }
           } catch {
             reject(new Error("استجابة غير متوقعة أثناء رفع الملف"));
@@ -231,24 +266,25 @@ export function CmsNewsManager({
         xhr.send(cloudinaryForm);
       });
 
+      URL.revokeObjectURL(objectUrl);
+      setLocalPreviewUrl(null);
       setMediaUrl(uploadResult.secure_url);
       if (uploadResult.resource_type === "video") {
         setType("VIDEO");
       } else if (type === "TEXT") {
         setType("IMAGE");
       }
+      setUploadError(null);
       setFeedback({
         kind: "success",
         text: "تم رفع الملف من جهازك بنجاح وإرفاقه بالمنشور.",
       });
     } catch (err) {
-      setFeedback({
-        kind: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "حدث خطأ أثناء رفع الملف من الجهاز.",
-      });
+      const msg =
+        err instanceof Error ? err.message : "حدث خطأ أثناء رفع الملف من الجهاز.";
+      setMediaUrl("");
+      setUploadError(msg);
+      setFeedback({ kind: "error", text: msg });
     } finally {
       setUploading(false);
       setUploadProgress(null);
@@ -574,30 +610,60 @@ export function CmsNewsManager({
                 className="hidden"
               />
 
-              {mediaUrl ? (
+              {(mediaUrl || localPreviewUrl) ? (
                 <div className="rounded-2xl border border-amber-900/15 dark:border-stone-700 bg-stone-50 dark:bg-stone-950 p-3 space-y-3">
-                  <div className="overflow-hidden rounded-xl bg-black/5 dark:bg-black/40 border border-stone-200 dark:border-stone-800 max-h-60 flex items-center justify-center">
+                  <div className="relative overflow-hidden rounded-xl bg-black/5 dark:bg-black/40 border border-stone-200 dark:border-stone-800 max-h-64 flex items-center justify-center">
                     {type === "VIDEO" ? (
                       <video
-                        src={mediaUrl}
+                        src={mediaUrl || localPreviewUrl || ""}
                         controls
-                        className="w-full max-h-60 object-contain"
+                        className="w-full max-h-64 object-contain"
                       />
                     ) : (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={mediaUrl}
+                        src={mediaUrl || localPreviewUrl || ""}
                         alt="معاينة الملف المرفوع"
-                        className="w-full max-h-60 object-contain"
+                        className="w-full max-h-64 object-contain"
                       />
+                    )}
+                    {uploading && (
+                      <div className="absolute inset-0 bg-black/55 backdrop-blur-[1px] flex flex-col items-center justify-center gap-2 p-4 text-white">
+                        <span className="text-xs font-bold">
+                          جاري الرفع إلى السحابة... {uploadProgress ?? 0}%
+                        </span>
+                        <div className="w-48 h-2 rounded-full bg-white/25 overflow-hidden">
+                          <div
+                            className="h-full bg-amber-400 transition-all duration-150"
+                            style={{ width: `${uploadProgress ?? 0}%` }}
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
 
+                  {uploadError && (
+                    <div className="flex items-start gap-2 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 text-xs font-semibold text-red-700 dark:text-red-300">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>{uploadError}</span>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>تم إرفاق الملف بنجاح</span>
-                    </span>
+                    {uploading ? (
+                      <span className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                        جاري رفع الملف...
+                      </span>
+                    ) : mediaUrl ? (
+                      <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>تم الرفع بنجاح وحفظ الملف</span>
+                      </span>
+                    ) : (
+                      <span className="text-xs font-semibold text-red-600 dark:text-red-400">
+                        لم يكتمل الرفع السحابي بعد
+                      </span>
+                    )}
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -606,12 +672,12 @@ export function CmsNewsManager({
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-200 hover:bg-stone-300 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 text-xs font-bold transition-colors disabled:opacity-50"
                       >
                         <Upload className="w-3.5 h-3.5" />
-                        <span>تغيير الملف</span>
+                        <span>{mediaUrl ? "تغيير الملف" : "إعادة المحاولة"}</span>
                       </button>
                       <button
                         type="button"
                         disabled={uploading}
-                        onClick={() => setMediaUrl("")}
+                        onClick={clearMedia}
                         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-950/70 text-red-700 dark:text-red-300 text-xs font-bold transition-colors disabled:opacity-50"
                       >
                         <Trash2 className="w-3.5 h-3.5" />

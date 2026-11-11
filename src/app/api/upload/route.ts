@@ -3,16 +3,27 @@ import { withAuth, ok, err } from "@/lib/api";
 
 const UPLOAD_FOLDER = "rawabifarah/news";
 
+function cleanEnvValue(value?: string) {
+  return value?.trim().replace(/^["']|["']$/g, "") || "";
+}
+
 function getCloudinaryConfig() {
-  const cloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
-  const apiKey = process.env.CLOUDINARY_API_KEY?.trim();
-  const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
+  const cloudName = cleanEnvValue(process.env.CLOUDINARY_CLOUD_NAME);
+  const apiKey = cleanEnvValue(process.env.CLOUDINARY_API_KEY);
+  const apiSecret = cleanEnvValue(process.env.CLOUDINARY_API_SECRET);
 
   if (!cloudName || !apiKey || !apiSecret) {
     return null;
   }
 
   return { cloudName, apiKey, apiSecret };
+}
+
+function validateCloudinarySecret(apiSecret: string) {
+  if (apiSecret.includes("*") || apiSecret.length < 10) {
+    return "قيمة CLOUDINARY_API_SECRET في Vercel غير صالحة أو ما زالت تحتوي على نجوم (***). يرجى كشف السر الحقيقي في Cloudinary عبر أيقونة العين ونسخه بدون مسافات أو علامات اقتباس ثم عمل Redeploy.";
+  }
+  return null;
 }
 
 function buildUploadSignature(apiSecret: string, timestamp: string) {
@@ -32,6 +43,11 @@ export const GET = withAuth(async () => {
         "خدمة رفع الوسائط (Cloudinary) غير مفعلة بعد. أضف المتغيرات CLOUDINARY_CLOUD_NAME و CLOUDINARY_API_KEY و CLOUDINARY_API_SECRET في إعدادات Vercel ثم أعد النشر.",
         400
       );
+    }
+
+    const secretError = validateCloudinarySecret(config.apiSecret);
+    if (secretError) {
+      return err(secretError, 400);
     }
 
     const timestamp = Math.floor(Date.now() / 1000).toString();
