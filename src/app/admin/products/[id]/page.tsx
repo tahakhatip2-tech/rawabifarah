@@ -27,7 +27,15 @@ export default async function EditProductPage({
   }
 
   const { id } = await params;
-  const product = await prisma.product.findUnique({ where: { id } });
+  const product = await prisma.product.findUnique({
+    where: { id },
+    include: {
+      barcodes: {
+        select: { id: true, code: true, type: true },
+        orderBy: { id: "asc" },
+      },
+    },
+  });
 
   if (!product) {
     notFound();
@@ -56,6 +64,7 @@ export default async function EditProductPage({
         isFeatured: product.isFeatured,
         isSeasonal: product.isSeasonal,
         isActive: product.isActive,
+        barcodes: product.barcodes,
       }}
     />
   );

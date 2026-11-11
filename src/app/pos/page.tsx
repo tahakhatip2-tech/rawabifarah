@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { formatCurrency } from "@/lib/currency";
 import Link from "next/link";
 import {
-  Wheat,
   Search,
   Plus,
   Minus,
@@ -13,13 +12,18 @@ import {
   Banknote,
   CreditCard,
   Printer,
-  RotateCcw,
   CheckCircle2,
   X,
-  ArrowRight,
-  Sparkles,
   ShoppingBag,
+  Camera,
+  Barcode,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react";
+import {
+  BarcodeCameraScanner,
+  type ScanLookupOutcome,
+} from "@/components/pos/BarcodeCameraScanner";
 
 interface POSItem {
   id: string;
@@ -30,64 +34,184 @@ interface POSItem {
   qty: number;
 }
 
-const POS_PRODUCTS = [
-  { id: "pos-1", productId: "000000000000000000000030", nameAr: "خبز بلدي (ربطة)", nameEn: "Pita Bread", price: 0.35, category: "bread", code: "101" },
-  { id: "pos-2", productId: "000000000000000000000031", nameAr: "كرواسون زبدة", nameEn: "Croissant", price: 1.25, category: "pastries", code: "102" },
-  { id: "pos-3", productId: "000000000000000000000032", nameAr: "مناقيش جبنة وزعتر", nameEn: "Cheese Pie", price: 1.5, category: "pies", code: "103" },
-  { id: "pos-4", productId: "000000000000000000000033", nameAr: "بقلاوة فستق (1 كغ)", nameEn: "Baklava 1kg", price: 14.5, category: "sweets", code: "104" },
-  { id: "pos-5", productId: "000000000000000000000034", nameAr: "معمول تمر (1 كغ)", nameEn: "Date Maamoul", price: 8.5, category: "sweets", code: "105" },
-  { id: "pos-6", productId: "000000000000000000000035", nameAr: "باغيت فرنسي", nameEn: "Baguette", price: 0.65, category: "bread", code: "106" },
-  { id: "pos-7", productId: "000000000000000000000036", nameAr: "كرواسون شوكولا", nameEn: "Pain Chocolat", price: 1.6, category: "pastries", code: "107" },
-  { id: "pos-8", productId: "000000000000000000000037", nameAr: "صفيحة لحمة (درزن)", nameEn: "Meat Sfiha", price: 6.0, category: "pies", code: "108" },
-  { id: "pos-9", productId: "000000000000000000000038", nameAr: "قالب كيك فدج", nameEn: "Fudge Cake", price: 18.0, category: "cakes", code: "109" },
-  { id: "pos-10", productId: "000000000000000000000039", nameAr: "توست حبوب كاملة", nameEn: "Multigrain Toast", price: 1.2, category: "bread", code: "110" },
-  { id: "pos-11", productId: "000000000000000000000040", nameAr: "شاي كرك بالحليب", nameEn: "Karak Tea", price: 0.75, category: "drinks", code: "111" },
-  { id: "pos-12", productId: "000000000000000000000041", nameAr: "قهوة أمريكية طازجة", nameEn: "Fresh Brew Coffee", price: 1.0, category: "drinks", code: "112" },
-];
+interface POSCatalogProduct {
+  id: string;
+  sku: string;
+  nameAr: string;
+  nameEn: string;
+  retailPrice: number;
+  unit: string;
+  category?: { id: string; nameAr: string } | null;
+  barcodes?: { id: string; code: string; type: string }[];
+}
 
-const CATEGORIES = [
-  { id: "all", name: "الكل" },
-  { id: "bread", name: "الخبز" },
-  { id: "pastries", name: "المعجنات" },
-  { id: "pies", name: "الفطائر" },
-  { id: "sweets", name: "الحلويات" },
-  { id: "cakes", name: "الكيك" },
-  { id: "drinks", name: "المشروبات" },
-];
+interface POSCategory {
+  id: string;
+  nameAr: string;
+}
+
+interface ReceiptData {
+  ticketNumber: string;
+  items: POSItem[];
+  total: number;
+  paid: number;
+  change: number;
+  method: "CASH" | "CARD";
+  time: string;
+  savedToDb?: boolean;
+}
 
 export default function POSTerminalPage() {
+  const [products, setProducts] = useState<POSCatalogProduct[]>([]);
+  const [categories, setCategories] = useState<POSCategory[]>([]);
+  const [loadingCatalog, setLoadingCatalog] = useState(true);
+
   const [selectedCat, setSelectedCat] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<POSItem[]>([]);
   const [discountPercent, setDiscountPercent] = useState<number>(0);
+
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [scanBanner, setScanBanner] = useState<{
+    ok: boolean;
+    text: string;
+  } | null>(null);
+
   const [paymentModalOpen, setPaymentModalOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState<"CASH" | "CARD">("CASH");
   const [amountTendered, setAmountTendered] = useState<string>("");
-  const [receiptSuccess, setReceiptSuccess] = useState<any>(null);
+  const [completingSale, setCompletingSale] = useState(false);
+  const [receiptSuccess, setReceiptSuccess] = useState<ReceiptData | null>(
+    null
+  );
+
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const addItemToCart = (prod: (typeof POS_PRODUCTS)[0]) => {
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      fetch("/api/products?limit=200").then((r) => r.json()),
+      fetch("/api/categories").then((r) => r.json()),
+    ])
+      .then(([prodJson, catJson]) => {
+        if (!active) return;
+        const prods: POSCatalogProduct[] = Array.isArray(prodJson?.data?.items)
+          ? prodJson.data.items
+          : [];
+        const cats: POSCategory[] = Array.isArray(catJson?.data)
+          ? catJson.data
+          : [];
+        setProducts(prods);
+        setCategories(cats);
+      })
+      .catch(() => {
+        // Keep empty catalog safely
+      })
+      .finally(() => {
+        if (active) setLoadingCatalog(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!scanBanner) return;
+    const t = window.setTimeout(() => setScanBanner(null), 3200);
+    return () => window.clearTimeout(t);
+  }, [scanBanner]);
+
+  const addItemToCart = useCallback((prod: POSCatalogProduct) => {
     setCart((prev) => {
-      const idx = prev.findIndex((i) => i.productId === prod.productId);
+      const idx = prev.findIndex((i) => i.productId === prod.id);
       if (idx > -1) {
         const copy = [...prev];
-        copy[idx].qty += 1;
+        copy[idx] = { ...copy[idx], qty: copy[idx].qty + 1 };
         return copy;
-      } else {
-        return [
-          ...prev,
-          {
-            id: prod.id,
-            productId: prod.productId,
-            nameAr: prod.nameAr,
-            nameEn: prod.nameEn,
-            price: prod.price,
-            qty: 1,
-          },
-        ];
       }
+      return [
+        ...prev,
+        {
+          id: prod.id,
+          productId: prod.id,
+          nameAr: prod.nameAr,
+          nameEn: prod.nameEn,
+          price: prod.retailPrice,
+          qty: 1,
+        },
+      ];
     });
-  };
+  }, []);
+
+  const handleBarcodeLookup = useCallback(
+    async (rawCode: string): Promise<ScanLookupOutcome> => {
+      const code = rawCode.trim();
+      if (!code) {
+        return { ok: false, message: "رمز باركود فارغ" };
+      }
+
+      // 1. Check loaded catalog first for instant zero-latency feedback
+      const localMatch = products.find(
+        (p) =>
+          p.barcodes?.some((b) => b.code === code) ||
+          p.sku.toLowerCase() === code.toLowerCase()
+      );
+      if (localMatch) {
+        addItemToCart(localMatch);
+        setScanBanner({
+          ok: true,
+          text: `تمت إضافة: ${localMatch.nameAr} (${formatCurrency(
+            localMatch.retailPrice
+          )})`,
+        });
+        return {
+          ok: true,
+          label: localMatch.nameAr,
+          price: localMatch.retailPrice,
+          message: "تمت الإضافة إلى الفاتورة",
+        };
+      }
+
+      // 2. Query backend lookup endpoint (covers newly added items)
+      try {
+        const res = await fetch(
+          `/api/products/barcode-lookup?code=${encodeURIComponent(code)}`
+        );
+        const json = await res.json();
+        const found: POSCatalogProduct | undefined = json?.data?.product;
+        if (res.ok && found) {
+          addItemToCart(found);
+          setProducts((prev) =>
+            prev.some((p) => p.id === found.id) ? prev : [found, ...prev]
+          );
+          setScanBanner({
+            ok: true,
+            text: `تمت إضافة: ${found.nameAr} (${formatCurrency(
+              found.retailPrice
+            )})`,
+          });
+          return {
+            ok: true,
+            label: found.nameAr,
+            price: found.retailPrice,
+            message: "تمت الإضافة إلى الفاتورة",
+          };
+        }
+      } catch {
+        // Network error handled gracefully below
+      }
+
+      setScanBanner({
+        ok: false,
+        text: `لم يتم العثور على منتج بالباركود: ${code}`,
+      });
+      return {
+        ok: false,
+        message: "الباركود غير مسجّل لأي منتج",
+      };
+    },
+    [products, addItemToCart]
+  );
 
   const updateItemQty = (productId: string, delta: number) => {
     setCart((prev) =>
@@ -101,10 +225,6 @@ export default function POSTerminalPage() {
         })
         .filter(Boolean) as POSItem[]
     );
-  };
-
-  const removeItem = (productId: string) => {
-    setCart((prev) => prev.filter((i) => i.productId !== productId));
   };
 
   const clearTicket = () => {
@@ -123,15 +243,51 @@ export default function POSTerminalPage() {
   const tendered = parseFloat(amountTendered) || 0;
   const changeDue = Math.max(0, tendered - grandTotal);
 
-  const handleCompleteSale = () => {
+  const handleCompleteSale = async () => {
+    if (cart.length === 0 || completingSale) return;
+    setCompletingSale(true);
+
+    let ticketNumber = `POS-${Date.now().toString().slice(-6)}`;
+    let savedToDb = false;
+
+    try {
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel: "POS",
+          deliveryType: "PICKUP",
+          notes:
+            discountPercent > 0
+              ? `نقطة بيع — الدفع: ${paymentMethod} | خصم: ${discountPercent}%`
+              : `نقطة بيع — الدفع: ${paymentMethod}`,
+          items: cart.map((i) => ({
+            productId: i.productId,
+            qty: i.qty,
+            unitPrice: i.price,
+          })),
+        }),
+      });
+      const json = await res.json();
+      if (res.ok && json?.data?.orderNumber) {
+        ticketNumber = json.data.orderNumber;
+        savedToDb = true;
+      }
+    } catch {
+      // Fallback safely to receipt view if API offline
+    } finally {
+      setCompletingSale(false);
+    }
+
     setReceiptSuccess({
-      ticketNumber: `POS-${Date.now().toString().slice(-6)}`,
+      ticketNumber,
       items: [...cart],
       total: grandTotal,
       paid: paymentMethod === "CASH" ? tendered : grandTotal,
       change: paymentMethod === "CASH" ? changeDue : 0,
       method: paymentMethod,
       time: new Date().toLocaleTimeString("ar-JO"),
+      savedToDb,
     });
     setPaymentModalOpen(false);
   };
@@ -143,21 +299,27 @@ export default function POSTerminalPage() {
     setAmountTendered("");
   };
 
-  const filteredProducts = POS_PRODUCTS.filter((p) => {
-    const matchCat = selectedCat === "all" || p.category === selectedCat;
+  const filteredProducts = products.filter((p) => {
+    const matchCat =
+      selectedCat === "all" || p.category?.id === selectedCat;
+    const q = searchQuery.trim().toLowerCase();
     const matchSearch =
-      p.nameAr.includes(searchQuery) ||
-      p.nameEn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.code.includes(searchQuery);
+      !q ||
+      p.nameAr.toLowerCase().includes(q) ||
+      p.nameEn.toLowerCase().includes(q) ||
+      p.sku.toLowerCase().includes(q) ||
+      Boolean(p.barcodes?.some((b) => b.code.toLowerCase().includes(q)));
     return matchCat && matchSearch;
   });
+
+  const totalUnitsInCart = cart.reduce((acc, i) => acc + i.qty, 0);
 
   return (
     <div className="h-screen w-screen bg-stone-950 text-stone-100 flex flex-col overflow-hidden select-none font-sans">
       {/* Top POS Navbar */}
-      <header className="h-14 bg-stone-900 border-b border-stone-800 px-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <Link href="/admin/dashboard" className="flex items-center gap-2 group">
+      <header className="h-14 bg-stone-900 border-b border-stone-800 px-3 sm:px-4 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <Link href="/admin/dashboard" className="flex items-center gap-2 group shrink-0">
             <div className="relative w-8 h-8 rounded-lg overflow-hidden bg-stone-900 border border-amber-500/30 p-0.5 flex items-center justify-center">
               <Image
                 src="/rwabifarah.png"
@@ -167,16 +329,28 @@ export default function POSTerminalPage() {
                 className="object-contain w-full h-full"
               />
             </div>
-            <span className="font-extrabold text-white text-sm">نقطة بيع روابي الفرح (POS)</span>
+            <span className="font-extrabold text-white text-xs sm:text-sm truncate">
+              نقطة بيع روابي الفرح (POS)
+            </span>
           </Link>
-          <span className="h-4 w-px bg-stone-800" />
-          <span className="text-xs text-stone-400">الفرع: <strong className="text-white">الفرع الرئيسي — عمّان</strong></span>
-          <span className="h-4 w-px bg-stone-800 hidden sm:block" />
-          <span className="text-xs text-stone-400 hidden sm:inline">الكاشير: <strong className="text-amber-400">محمد علي (جلسة #44)</strong></span>
+          <span className="h-4 w-px bg-stone-800 hidden md:block" />
+          <span className="text-xs text-stone-400 hidden md:inline">
+            الفرع: <strong className="text-white">الفرع الرئيسي — عمّان</strong>
+          </span>
         </div>
 
-        <div className="flex items-center gap-3">
-          <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30">
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setCameraOpen(true)}
+            className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-stone-950 text-xs font-black flex items-center gap-1.5 shadow-sm transition active:scale-95"
+          >
+            <Camera className="w-4 h-4" />
+            <span className="hidden sm:inline">تشغيل الكاميرا للبيع بالباركود</span>
+            <span className="sm:hidden">كاميرا الباركود</span>
+          </button>
+
+          <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-bold border border-emerald-500/30 hidden sm:inline">
             جلسة نشطة
           </span>
           <Link
@@ -190,25 +364,73 @@ export default function POSTerminalPage() {
 
       {/* Main Terminal Grid */}
       <div className="flex-1 grid grid-cols-12 overflow-hidden">
-        {/* Left Side: Catalog & Search (Cols 8) */}
+        {/* Left Side: Catalog & Search */}
         <div className="col-span-7 lg:col-span-8 flex flex-col border-l border-stone-800 bg-stone-950 overflow-hidden">
-          {/* Search & Category Header */}
+          {/* Search, Barcode Camera & Category Header */}
           <div className="p-3 border-b border-stone-800 bg-stone-900/60 space-y-2 shrink-0">
-            <div className="relative">
-              <Search className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="ابحث بالاسم أو الرمز السريع (Barcode / Code)..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pr-9 pl-4 py-2 rounded-xl bg-stone-800 border border-stone-700 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-amber-500"
-              />
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="امسح الباركود أو ابحث بالاسم / الرمز ثم اضغط Enter..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={async (e) => {
+                    if (e.key === "Enter" && searchQuery.trim()) {
+                      e.preventDefault();
+                      const res = await handleBarcodeLookup(searchQuery.trim());
+                      if (res.ok) {
+                        setSearchQuery("");
+                      }
+                    }
+                  }}
+                  className="w-full pr-9 pl-4 py-2 rounded-xl bg-stone-800 border border-stone-700 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setCameraOpen(true)}
+                className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-xs transition active:scale-95"
+                title="تشغيل كاميرا الجهاز لمسح الباركود"
+              >
+                <Camera className="w-4 h-4" />
+                <span className="hidden md:inline">مسح بالكاميرا</span>
+              </button>
             </div>
+
+            {scanBanner && (
+              <div
+                className={`px-3 py-1.5 rounded-lg border text-[11px] font-bold flex items-center gap-2 ${
+                  scanBanner.ok
+                    ? "bg-emerald-950/60 border-emerald-700/60 text-emerald-300"
+                    : "bg-red-950/60 border-red-700/60 text-red-300"
+                }`}
+              >
+                {scanBanner.ok ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>{scanBanner.text}</span>
+              </div>
+            )}
 
             {/* Category Pills */}
             <div className="flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
-              {CATEGORIES.map((cat) => (
+              <button
+                onClick={() => setSelectedCat("all")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap transition ${
+                  selectedCat === "all"
+                    ? "bg-amber-600 text-stone-950 font-black shadow-sm"
+                    : "bg-stone-800 text-stone-300 hover:bg-stone-700"
+                }`}
+              >
+                الكل ({products.length})
+              </button>
+              {categories.map((cat) => (
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCat(cat.id)}
@@ -218,44 +440,76 @@ export default function POSTerminalPage() {
                       : "bg-stone-800 text-stone-300 hover:bg-stone-700"
                   }`}
                 >
-                  {cat.name}
+                  {cat.nameAr}
                 </button>
               ))}
             </div>
           </div>
 
           {/* Product Buttons Grid */}
-          <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
-            {filteredProducts.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => addItemToCart(p)}
-                className="p-3 rounded-xl bg-stone-900 border border-stone-800 hover:border-amber-500/60 active:scale-95 text-right flex flex-col justify-between transition min-h-[95px] shadow-xs hover:bg-stone-850"
-              >
-                <div>
-                  <span className="text-[10px] font-mono text-stone-500 block">#{p.code}</span>
-                  <h4 className="font-bold text-xs text-white line-clamp-2 mt-0.5">{p.nameAr}</h4>
-                </div>
-                <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-stone-800/80">
-                  <span className="font-mono font-bold text-amber-400 text-xs">
-                    {formatCurrency(p.price)}
-                  </span>
-                  <div className="w-5 h-5 rounded-md bg-amber-600/20 text-amber-400 flex items-center justify-center">
-                    <Plus className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-              </button>
-            ))}
+          <div className="flex-1 overflow-y-auto p-3">
+            {loadingCatalog ? (
+              <div className="h-full flex flex-col items-center justify-center gap-2 text-stone-400 text-xs">
+                <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
+                <span>جاري تحميل أصناف المخبز والباركودات...</span>
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center text-stone-500 text-xs p-6">
+                <Barcode className="w-10 h-10 text-stone-700 mb-2" />
+                <p className="font-bold text-stone-300">لا توجد منتجات مطابقة</p>
+                <p className="text-[11px] text-stone-500 mt-1">
+                  جرّب تغيير البحث أو استخدم زر «تشغيل الكاميرا للبيع بالباركود».
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                {filteredProducts.map((p) => {
+                  const primaryBarcode =
+                    p.barcodes && p.barcodes.length > 0
+                      ? p.barcodes[p.barcodes.length - 1].code
+                      : p.sku;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => addItemToCart(p)}
+                      className="p-3 rounded-xl bg-stone-900 border border-stone-800 hover:border-amber-500/60 active:scale-95 text-right flex flex-col justify-between transition min-h-[100px] shadow-xs hover:bg-stone-800/70"
+                    >
+                      <div>
+                        <span
+                          dir="ltr"
+                          className="text-[10px] font-mono text-stone-400 block truncate text-right"
+                        >
+                          {primaryBarcode}
+                        </span>
+                        <h4 className="font-bold text-xs text-white line-clamp-2 mt-0.5">
+                          {p.nameAr}
+                        </h4>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-stone-800/80">
+                        <span className="font-mono font-bold text-amber-400 text-xs">
+                          {formatCurrency(p.retailPrice)}
+                        </span>
+                        <div className="w-5 h-5 rounded-md bg-amber-600/20 text-amber-400 flex items-center justify-center">
+                          <Plus className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Right Side: Active Ticket / Bill (Cols 4) */}
+        {/* Right Side: Active Ticket / Bill */}
         <div className="col-span-5 lg:col-span-4 flex flex-col bg-stone-900 overflow-hidden">
           {/* Ticket Header */}
           <div className="p-3 border-b border-stone-800 flex items-center justify-between shrink-0 bg-stone-900">
             <div className="flex items-center gap-2">
               <ShoppingBag className="w-4 h-4 text-amber-500" />
-              <span className="font-bold text-xs text-white">تذكرة البيع الحالية ({cart.length})</span>
+              <span className="font-bold text-xs text-white">
+                تذكرة البيع الحالية ({totalUnitsInCart})
+              </span>
             </div>
             {cart.length > 0 && (
               <button
@@ -271,10 +525,22 @@ export default function POSTerminalPage() {
           {/* Ticket Items List */}
           <div className="flex-1 overflow-y-auto p-3 space-y-2">
             {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center text-stone-500 p-4">
-                <ShoppingBag className="w-12 h-12 text-stone-700 mb-2" />
-                <p className="text-xs font-bold text-stone-400">التذكرة فارغة</p>
-                <p className="text-[11px] text-stone-600 mt-0.5">اضغط على الأصناف لإضافتها إلى الحساب</p>
+              <div className="h-full flex flex-col items-center justify-center text-center text-stone-500 p-4 gap-3">
+                <ShoppingBag className="w-12 h-12 text-stone-700" />
+                <div>
+                  <p className="text-xs font-bold text-stone-400">التذكرة فارغة</p>
+                  <p className="text-[11px] text-stone-600 mt-0.5">
+                    اضغط على الأصناف أو استخدم كاميرا الباركود لإضافتها تلقائياً
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setCameraOpen(true)}
+                  className="px-4 py-2 rounded-xl bg-amber-600/15 hover:bg-amber-600/25 border border-amber-500/40 text-amber-400 text-xs font-bold flex items-center gap-1.5 transition"
+                >
+                  <Camera className="w-4 h-4" />
+                  <span>تشغيل الكاميرا لبدء البيع</span>
+                </button>
               </div>
             ) : (
               cart.map((item) => (
@@ -283,7 +549,9 @@ export default function POSTerminalPage() {
                   className="p-2.5 rounded-xl bg-stone-950/70 border border-stone-800 flex items-center justify-between gap-2"
                 >
                   <div className="flex-1 min-w-0">
-                    <h5 className="font-bold text-xs text-white truncate">{item.nameAr}</h5>
+                    <h5 className="font-bold text-xs text-white truncate">
+                      {item.nameAr}
+                    </h5>
                     <p className="text-[10px] text-stone-400 font-mono">
                       {formatCurrency(item.price)} × {item.qty}
                     </p>
@@ -341,21 +609,29 @@ export default function POSTerminalPage() {
             <div className="space-y-1 text-xs text-stone-400">
               <div className="flex justify-between">
                 <span>المجموع الفرعي:</span>
-                <span className="font-mono text-stone-200">{formatCurrency(subtotal)}</span>
+                <span className="font-mono text-stone-200">
+                  {formatCurrency(subtotal)}
+                </span>
               </div>
               {discountPercent > 0 && (
                 <div className="flex justify-between text-amber-400">
                   <span>الخصم ({discountPercent}%):</span>
-                  <span className="font-mono">-{formatCurrency(discountAmount)}</span>
+                  <span className="font-mono">
+                    -{formatCurrency(discountAmount)}
+                  </span>
                 </div>
               )}
               <div className="flex justify-between">
                 <span>ضريبة المبيعات (16%):</span>
-                <span className="font-mono text-stone-200">{formatCurrency(tax)}</span>
+                <span className="font-mono text-stone-200">
+                  {formatCurrency(tax)}
+                </span>
               </div>
               <div className="flex justify-between text-sm font-black text-white pt-1.5 border-t border-stone-800">
                 <span>الإجمالي النهائي:</span>
-                <span className="font-mono text-amber-400 text-base">{formatCurrency(grandTotal)}</span>
+                <span className="font-mono text-amber-400 text-base">
+                  {formatCurrency(grandTotal)}
+                </span>
               </div>
             </div>
 
@@ -391,22 +667,42 @@ export default function POSTerminalPage() {
         </div>
       </div>
 
+      {/* Camera Barcode Scanner Modal */}
+      <BarcodeCameraScanner
+        isOpen={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onScanCode={handleBarcodeLookup}
+        cartCount={totalUnitsInCart}
+        grandTotal={grandTotal}
+      />
+
       {/* Payment Tender Modal */}
       {paymentModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-stone-900 border border-stone-800 rounded-2xl p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between border-b border-stone-800 pb-3">
               <h3 className="font-bold text-base text-white flex items-center gap-2">
-                {paymentMethod === "CASH" ? <Banknote className="w-5 h-5 text-emerald-400" /> : <CreditCard className="w-5 h-5 text-sky-400" />}
-                <span>تحصيل المبلغ: {paymentMethod === "CASH" ? "نقداً" : "بطاقة بنكية"}</span>
+                {paymentMethod === "CASH" ? (
+                  <Banknote className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <CreditCard className="w-5 h-5 text-sky-400" />
+                )}
+                <span>
+                  تحصيل المبلغ: {paymentMethod === "CASH" ? "نقداً" : "بطاقة بنكية"}
+                </span>
               </h3>
-              <button onClick={() => setPaymentModalOpen(false)} className="text-stone-400 hover:text-white">
+              <button
+                onClick={() => setPaymentModalOpen(false)}
+                className="text-stone-400 hover:text-white"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-4 rounded-xl bg-stone-950 border border-stone-800 text-center space-y-1">
-              <span className="text-xs text-stone-400">المبلغ المطلوب تحصيله:</span>
+              <span className="text-xs text-stone-400">
+                المبلغ المطلوب تحصيله:
+              </span>
               <div className="text-2xl font-black text-amber-400 font-mono">
                 {formatCurrency(grandTotal)}
               </div>
@@ -415,7 +711,9 @@ export default function POSTerminalPage() {
             {paymentMethod === "CASH" && (
               <div className="space-y-3">
                 <div>
-                  <label className="block text-xs font-semibold text-stone-300 mb-1">المبلغ المستلم من الزبون (د.أ):</label>
+                  <label className="block text-xs font-semibold text-stone-300 mb-1">
+                    المبلغ المستلم من الزبون (د.أ):
+                  </label>
                   <input
                     type="number"
                     step="0.05"
@@ -454,27 +752,39 @@ export default function POSTerminalPage() {
                 إلغاء
               </button>
               <button
-                disabled={paymentMethod === "CASH" && tendered < grandTotal}
+                disabled={
+                  completingSale ||
+                  (paymentMethod === "CASH" && tendered < grandTotal)
+                }
                 onClick={handleCompleteSale}
                 className="flex-1 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs transition flex items-center justify-center gap-1.5"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>إتمام وطباعة الفاتورة</span>
+                <span>
+                  {completingSale
+                    ? "جاري التسجيل..."
+                    : "إتمام وطباعة الفاتورة"}
+                </span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Receipt Success Simulation Modal */}
+      {/* Receipt Success Modal */}
       {receiptSuccess && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-sm bg-white text-stone-900 rounded-2xl p-6 space-y-4 shadow-2xl font-mono text-xs">
-            {/* Bakery thermal receipt layout */}
             <div className="text-center space-y-1 border-b border-dashed border-stone-300 pb-3">
-              <h2 className="text-base font-black text-stone-950 font-sans">مخابز روابي الفرح</h2>
-              <p className="text-[10px] text-stone-600 font-sans">الفرع الرئيسي — عمّان — الرابية</p>
-              <p className="text-[10px] text-stone-500">هاتف: 0799000001 | ض.ع: 12345678</p>
+              <h2 className="text-base font-black text-stone-950 font-sans">
+                مخابز روابي الفرح
+              </h2>
+              <p className="text-[10px] text-stone-600 font-sans">
+                الفرع الرئيسي — عمّان — الرابية
+              </p>
+              <p className="text-[10px] text-stone-500">
+                هاتف: 0799000001 | ض.ع: 12345678
+              </p>
               <div className="flex justify-between text-[10px] text-stone-500 pt-1">
                 <span>{receiptSuccess.ticketNumber}</span>
                 <span>{receiptSuccess.time}</span>
@@ -482,11 +792,17 @@ export default function POSTerminalPage() {
             </div>
 
             <div className="space-y-1.5 py-1 max-h-48 overflow-y-auto">
-              {receiptSuccess.items.map((i: any) => (
+              {receiptSuccess.items.map((i) => (
                 <div key={i.productId} className="flex justify-between">
-                  <span className="font-sans font-medium truncate flex-1">{i.nameAr}</span>
-                  <span className="text-stone-500 w-8 text-center">{i.qty}×</span>
-                  <span className="font-bold">{formatCurrency(i.price * i.qty)}</span>
+                  <span className="font-sans font-medium truncate flex-1">
+                    {i.nameAr}
+                  </span>
+                  <span className="text-stone-500 w-8 text-center">
+                    {i.qty}×
+                  </span>
+                  <span className="font-bold">
+                    {formatCurrency(i.price * i.qty)}
+                  </span>
                 </div>
               ))}
             </div>
@@ -498,7 +814,11 @@ export default function POSTerminalPage() {
               </div>
               <div className="flex justify-between text-[11px]">
                 <span className="font-sans">طريقة الدفع:</span>
-                <span>{receiptSuccess.method === "CASH" ? "نقداً" : "بطاقة فيزا/POS"}</span>
+                <span>
+                  {receiptSuccess.method === "CASH"
+                    ? "نقداً"
+                    : "بطاقة فيزا/POS"}
+                </span>
               </div>
               {receiptSuccess.method === "CASH" && (
                 <div className="flex justify-between text-[11px]">

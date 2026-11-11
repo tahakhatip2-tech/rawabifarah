@@ -15,7 +15,10 @@ import {
   Wheat,
   Loader2,
   ImageIcon,
+  Barcode,
+  Printer,
 } from "lucide-react";
+import { BarcodeLabelModal } from "@/components/admin/BarcodeLabelModal";
 
 interface AdminProductRow {
   id: string;
@@ -32,6 +35,7 @@ interface AdminProductRow {
   isActive: boolean;
   isFeatured: boolean;
   inventoryItems?: { qtyOnHand: number }[];
+  barcodes?: { id: string; code: string; type: string }[];
 }
 
 export default function AdminProductsPage() {
@@ -40,6 +44,28 @@ export default function AdminProductsPage() {
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [backfilling, setBackfilling] = useState(false);
+  const [barcodeNotice, setBarcodeNotice] = useState<string | null>(null);
+  const [labelModalProduct, setLabelModalProduct] = useState<{
+    id: string;
+    nameAr: string;
+    retailPrice: number;
+    unit: string;
+    barcode: string;
+  } | null>(null);
+
+  const loadProducts = async () => {
+    try {
+      const res = await fetch("/api/products?all=true&limit=100");
+      const json = await res.json();
+      const items: AdminProductRow[] = Array.isArray(json?.data?.items)
+        ? json.data.items
+        : [];
+      setProducts(items);
+    } catch {
+      // Keep existing list on failure
+    }
+  };
 
   useEffect(() => {
     let active = true;
@@ -69,11 +95,77 @@ export default function AdminProductsPage() {
       !q ||
       p.nameAr.toLowerCase().includes(q) ||
       p.nameEn.toLowerCase().includes(q) ||
-      p.sku.toLowerCase().includes(q);
+      p.sku.toLowerCase().includes(q) ||
+      Boolean(p.barcodes?.some((b) => b.code.toLowerCase().includes(q)));
     const catName = p.category?.nameAr || "أخرى";
     const matchCat = selectedCategory === "ALL" || catName === selectedCategory;
     return matchSearch && matchCat;
   });
+
+  const missingBarcodeCount = products.filter(
+    (p) => !p.barcodes || p.barcodes.length === 0
+  ).length;
+
+  const ensureAndOpenBarcodeModal = async (p: AdminProductRow) => {
+    const existing =
+      p.barcodes && p.barcodes.length > 0
+        ? p.barcodes[p.barcodes.length - 1].code
+        : undefined;
+    if (existing) {
+      setLabelModalProduct({
+        id: p.id,
+        nameAr: p.nameAr,
+        retailPrice: p.retailPrice,
+        unit: p.unit,
+        barcode: existing,
+      });
+      return;
+    }
+
+    setBusyId(p.id);
+    try {
+      const res = await fetch(`/api/products/${p.id}/barcode`, { method: "POST" });
+      const json = await res.json();
+      const createdCode = json?.data?.barcode?.code as string | undefined;
+      if (res.ok && createdCode) {
+        const updatedBarcodes = json?.data?.barcodes || [json.data.barcode];
+        setProducts((prev) =>
+          prev.map((row) =>
+            row.id === p.id ? { ...row, barcodes: updatedBarcodes } : row
+          )
+        );
+        setLabelModalProduct({
+          id: p.id,
+          nameAr: p.nameAr,
+          retailPrice: p.retailPrice,
+          unit: p.unit,
+          barcode: createdCode,
+        });
+      }
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleBackfillBarcodes = async () => {
+    setBackfilling(true);
+    setBarcodeNotice(null);
+    try {
+      const res = await fetch("/api/products/barcode-backfill", { method: "POST" });
+      const json = await res.json();
+      if (res.ok) {
+        await loadProducts();
+        const updated = Number(json?.data?.updated || 0);
+        setBarcodeNotice(
+          updated > 0
+            ? `تم توليد باركود جديد لعدد ${updated} صنف بنجاح.`
+            : "جميع الأصناف تمتلك باركود بالفعل."
+        );
+      }
+    } finally {
+      setBackfilling(false);
+    }
+  };
 
   const categories = Array.from(
     new Set(products.map((p) => p.category?.nameAr || "أخرى"))
@@ -130,7 +222,23 @@ export default function AdminProductsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={backfilling || loading}
+            onClick={handleBackfillBarcodes}
+            className="px-3.5 py-2.5 rounded-xl border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 hover:bg-stone-50 dark:hover:bg-stone-800 text-stone-700 dark:text-stone-200 font-bold text-xs flex items-center gap-2 transition disabled:opacity-50"
+          >
+            <Barcode className="w-4 h-4 text-amber-600" />
+            <span>
+              {backfilling
+                ? "جاري التوليد..."
+                : missingBarcodeCount > 0
+                ? `توليد باركود (${missingBarcodeCount})`
+                : "فحص وتوليد الباركود"}
+            </span>
+          </button>
+
           <Link
             href="/admin/products/new"
             className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-2 shadow-sm transition"
@@ -141,13 +249,26 @@ export default function AdminProductsPage() {
         </div>
       </div>
 
+      {barcodeNotice && (
+        <div className="px-4 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 text-xs font-bold text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
+          <span>{barcodeNotice}</span>
+          <button
+            type="button"
+            onClick={() => setBarcodeNotice(null)}
+            className="text-emerald-600 hover:text-emerald-900 dark:hover:text-emerald-100 text-[11px]"
+          >
+            إغلاق
+          </button>
+        </div>
+      )}
+
       {/* Filter and Search Bar */}
       <div className="p-4 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="relative w-full sm:w-80">
           <Search className="w-4 h-4 text-stone-400 absolute right-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="بحث بالاسم أو SKU..."
+            placeholder="بحث بالاسم، الباركود، أو SKU..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pr-9 pl-4 py-2 rounded-xl bg-stone-50 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 text-xs text-stone-900 dark:text-stone-100 placeholder-stone-400 focus:outline-none focus:border-amber-500"
@@ -188,7 +309,7 @@ export default function AdminProductsPage() {
               <thead className="bg-stone-50 dark:bg-stone-800/60 border-b border-stone-200 dark:border-stone-800 text-stone-500 font-bold">
                 <tr>
                   <th className="py-3 px-4">المنتج والصور</th>
-                  <th className="py-3 px-4">رمز SKU</th>
+                  <th className="py-3 px-4">الباركود / SKU</th>
                   <th className="py-3 px-4">التصنيف</th>
                   <th className="py-3 px-4">سعر البيع (د.أ)</th>
                   <th className="py-3 px-4">تكلفة الإنتاج</th>
@@ -241,7 +362,27 @@ export default function AdminProductsPage() {
                           </div>
                         </div>
                       </td>
-                      <td className="py-3 px-4 font-mono text-stone-500">{p.sku}</td>
+                      <td className="py-3 px-4 font-mono">
+                        {p.barcodes && p.barcodes.length > 0 ? (
+                          <div className="space-y-0.5">
+                            <span
+                              dir="ltr"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 font-bold text-[11px]"
+                            >
+                              <Barcode className="w-3 h-3" />
+                              {p.barcodes[p.barcodes.length - 1].code}
+                            </span>
+                            <div className="text-[10px] text-stone-400">{p.sku}</div>
+                          </div>
+                        ) : (
+                          <div className="space-y-0.5">
+                            <span className="inline-block px-2 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-400 text-[10px] font-sans">
+                              بدون باركود
+                            </span>
+                            <div className="text-[10px] text-stone-400">{p.sku}</div>
+                          </div>
+                        )}
+                      </td>
                       <td className="py-3 px-4">
                         <span className="px-2 py-0.5 rounded-md bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 font-medium text-[11px]">
                           {p.category?.nameAr || "عام"}
@@ -282,6 +423,15 @@ export default function AdminProductsPage() {
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={isBusy}
+                            onClick={() => ensureAndOpenBarcodeModal(p)}
+                            className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition disabled:opacity-50"
+                            title="عرض وطباعة الباركود"
+                          >
+                            <Printer className="w-3.5 h-3.5" />
+                          </button>
                           <Link
                             href={`/products/${p.id}`}
                             target="_blank"
@@ -316,6 +466,41 @@ export default function AdminProductsPage() {
           </div>
         )}
       </div>
+
+      <BarcodeLabelModal
+        isOpen={Boolean(labelModalProduct)}
+        onClose={() => setLabelModalProduct(null)}
+        product={labelModalProduct}
+        onRegenerateBarcode={
+          labelModalProduct
+            ? async () => {
+                const targetId = labelModalProduct.id;
+                const res = await fetch(`/api/products/${targetId}/barcode`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ forceNew: true }),
+                });
+                const json = await res.json();
+                const code = json?.data?.barcode?.code as string | undefined;
+                if (res.ok && code) {
+                  const updatedBarcodes = json?.data?.barcodes || [json.data.barcode];
+                  setProducts((prev) =>
+                    prev.map((row) =>
+                      row.id === targetId
+                        ? { ...row, barcodes: updatedBarcodes }
+                        : row
+                    )
+                  );
+                  setLabelModalProduct((prev) =>
+                    prev && prev.id === targetId ? { ...prev, barcode: code } : prev
+                  );
+                  return code;
+                }
+                return null;
+              }
+            : undefined
+        }
+      />
     </div>
   );
 }

@@ -3,8 +3,19 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowRight, Save, Wheat, AlertCircle, CheckCircle2 } from "lucide-react";
+import {
+  ArrowRight,
+  Save,
+  Wheat,
+  AlertCircle,
+  CheckCircle2,
+  Barcode,
+  Printer,
+  Sparkles,
+} from "lucide-react";
 import { ProductImagesUploader } from "@/components/admin/ProductImagesUploader";
+import { BarcodeSvg } from "@/components/admin/BarcodeSvg";
+import { BarcodeLabelModal } from "@/components/admin/BarcodeLabelModal";
 
 interface CategoryOption {
   id: string;
@@ -32,6 +43,7 @@ export interface ProductFormInitialData {
   isFeatured: boolean;
   isSeasonal: boolean;
   isActive: boolean;
+  barcodes?: { id: string; code: string; type: string }[];
 }
 
 interface ProductFormProps {
@@ -47,6 +59,18 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
   const [feedback, setFeedback] = useState<{
     kind: "success" | "error";
     text: string;
+  } | null>(null);
+  const [productBarcodes, setProductBarcodes] = useState(
+    initialProduct?.barcodes || []
+  );
+  const [generatingBarcode, setGeneratingBarcode] = useState(false);
+  const [labelModalOpen, setLabelModalOpen] = useState(false);
+  const [createdLabelProduct, setCreatedLabelProduct] = useState<{
+    id: string;
+    nameAr: string;
+    retailPrice: number;
+    unit: string;
+    barcode: string;
   } | null>(null);
 
   const [formData, setFormData] = useState({
@@ -135,15 +159,28 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
 
       const data = await res.json();
       if (res.ok && data.success) {
+        const createdBarcode = data?.data?.barcodes?.[0]?.code as string | undefined;
         setFeedback({
           kind: "success",
           text:
             mode === "edit"
               ? "تم تحديث بيانات وصور المنتج بنجاح!"
+              : createdBarcode
+              ? `تم إضافة المنتج وتوليد الباركود (${createdBarcode}) بنجاح!`
               : "تم إضافة المنتج وصوره بنجاح!",
         });
-        router.push("/admin/products");
-        router.refresh();
+        if (mode === "create" && data?.data?.id && createdBarcode) {
+          setCreatedLabelProduct({
+            id: data.data.id,
+            nameAr: data.data.nameAr || formData.nameAr,
+            retailPrice: Number(data.data.retailPrice ?? formData.retailPrice),
+            unit: data.data.unit || formData.unit,
+            barcode: createdBarcode,
+          });
+        } else {
+          router.push("/admin/products");
+          router.refresh();
+        }
       } else {
         setFeedback({
           kind: "error",
@@ -209,6 +246,98 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
       )}
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {/* Barcode Card (Edit Mode) */}
+        {mode === "edit" && initialProduct && (
+          <div className="p-6 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-stone-800 dark:text-stone-200 flex items-center gap-2">
+                  <Barcode className="w-4 h-4 text-amber-600" />
+                  <span>باركود المنتج (EAN-13)</span>
+                </h2>
+                <p className="text-[11px] text-stone-500 mt-0.5">
+                  يُستخدم لمسح المنتج بكاميرا الكاشير وطباعة الملصقات اللاصقة.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {productBarcodes.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setLabelModalOpen(true)}
+                    className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition shadow-xs"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>طباعة ملصق الباركود</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={generatingBarcode}
+                  onClick={async () => {
+                    setGeneratingBarcode(true);
+                    try {
+                      const res = await fetch(
+                        `/api/products/${initialProduct.id}/barcode`,
+                        {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            forceNew: productBarcodes.length > 0,
+                          }),
+                        }
+                      );
+                      const json = await res.json();
+                      if (res.ok && json?.data?.barcodes) {
+                        setProductBarcodes(json.data.barcodes);
+                      }
+                    } finally {
+                      setGeneratingBarcode(false);
+                    }
+                  }}
+                  className="px-3.5 py-2 rounded-xl border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 hover:bg-stone-100 dark:hover:bg-stone-700 text-xs font-bold text-stone-700 dark:text-stone-200 flex items-center gap-1.5 transition disabled:opacity-50"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                  <span>
+                    {generatingBarcode
+                      ? "جاري التوليد..."
+                      : productBarcodes.length > 0
+                      ? "توليد باركود جديد"
+                      : "توليد باركود تلقائي"}
+                  </span>
+                </button>
+              </div>
+            </div>
+
+            {productBarcodes.length > 0 ? (
+              <div className="p-4 rounded-xl bg-stone-50 dark:bg-stone-950/60 border border-stone-200 dark:border-stone-800 flex flex-col sm:flex-row items-center justify-between gap-4">
+                <div className="bg-white p-3 rounded-xl border border-stone-200 w-full sm:w-auto flex justify-center">
+                  <BarcodeSvg
+                    code={productBarcodes[productBarcodes.length - 1].code}
+                    height={54}
+                  />
+                </div>
+                <div className="text-xs space-y-1 text-center sm:text-right">
+                  <div className="text-stone-500">الباركود الفعّال حالياً:</div>
+                  <div
+                    dir="ltr"
+                    className="font-mono font-black text-base text-stone-900 dark:text-stone-100"
+                  >
+                    {productBarcodes[productBarcodes.length - 1].code}
+                  </div>
+                  <div className="text-[11px] text-stone-400">
+                    النوع: EAN-13 | مسجّل في قاعدة البيانات
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 text-xs text-amber-800 dark:text-amber-300">
+                هذا المنتج لا يمتلك باركود بعد. اضغط على «توليد باركود تلقائي» لإنشاء باركود فوري.
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 5 Product Images */}
         <div className="p-5 sm:p-6 rounded-2xl bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800">
           <ProductImagesUploader
@@ -470,6 +599,38 @@ export function ProductForm({ mode, initialProduct }: ProductFormProps) {
           </button>
         </div>
       </form>
+
+      <BarcodeLabelModal
+        isOpen={
+          Boolean(createdLabelProduct) ||
+          (labelModalOpen &&
+            Boolean(initialProduct) &&
+            productBarcodes.length > 0)
+        }
+        onClose={() => {
+          if (createdLabelProduct) {
+            setCreatedLabelProduct(null);
+            router.push("/admin/products");
+            router.refresh();
+          } else {
+            setLabelModalOpen(false);
+          }
+        }}
+        product={
+          createdLabelProduct
+            ? createdLabelProduct
+            : initialProduct && productBarcodes.length > 0
+            ? {
+                id: initialProduct.id,
+                nameAr: formData.nameAr || initialProduct.nameAr,
+                retailPrice:
+                  parseFloat(formData.retailPrice) || initialProduct.retailPrice,
+                unit: formData.unit || initialProduct.unit,
+                barcode: productBarcodes[productBarcodes.length - 1].code,
+              }
+            : null
+        }
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { hasPermission, PERMISSIONS } from "@/lib/permissions";
 import { withAuth, ok, err, getPagination, auditLog } from "@/lib/api";
 import { UserRole } from "@prisma/client";
+import { generateUniqueEan13 } from "@/lib/barcode-server";
 
 function sanitizeProductImages(input: unknown): string[] {
   if (!Array.isArray(input)) return [];
@@ -54,6 +55,7 @@ export async function GET(req: NextRequest) {
         { nameAr: { contains: search, mode: "insensitive" } },
         { nameEn: { contains: search, mode: "insensitive" } },
         { sku: { contains: search, mode: "insensitive" } },
+        { barcodes: { some: { code: { contains: search, mode: "insensitive" } } } },
       ];
     }
 
@@ -65,6 +67,9 @@ export async function GET(req: NextRequest) {
         include: {
           category: {
             select: { id: true, nameAr: true, nameEn: true, slug: true },
+          },
+          barcodes: {
+            select: { id: true, code: true, type: true },
           },
           variants: {
             where: { isActive: true },
@@ -141,6 +146,7 @@ export const POST = withAuth(
       }
 
       const cleanedImages = sanitizeProductImages(images);
+      const barcodeCode = await generateUniqueEan13();
 
       const product = await prisma.product.create({
         data: {
@@ -164,9 +170,16 @@ export const POST = withAuth(
           isActive: Boolean(isActive),
           isFeatured: Boolean(isFeatured),
           isSeasonal: Boolean(isSeasonal),
+          barcodes: {
+            create: {
+              code: barcodeCode,
+              type: "EAN13",
+            },
+          },
         },
         include: {
           category: true,
+          barcodes: { select: { id: true, code: true, type: true } },
         },
       });
 

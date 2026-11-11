@@ -274,3 +274,20 @@
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+
+/* ── Barcode Sticker Printing Helper ─────────────────────── */
+@media print {
+  body.printing-barcodes > *:not(#rf-barcode-print-host) {
+    display: none !important;
+  }
+  body.printing-barcodes {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  #rf-barcode-print-host {
+    display: block !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}
