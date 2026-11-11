@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import {
   ClipboardList,
   Croissant,
-  Home,
   Newspaper,
   UserCircle2,
 } from "lucide-react";
@@ -55,26 +54,26 @@ export function BottomNavBar() {
             icon={ClipboardList}
           />
 
-          {/* 3. الرئيسية (الزر البارز بالمنتصف) */}
-          <div className="flex flex-col items-center justify-end -mt-7 pb-0.5">
+          {/* 3. الرئيسية (زر الشعار الدائري البارز بالمنتصف) */}
+          <div className="flex flex-col items-center justify-end -mt-8 pb-0.5">
             <Link
               href="/"
               aria-current={isHomeActive ? "page" : undefined}
-              className={`group flex flex-col items-center justify-center focus:outline-none`}
+              aria-label="الرئيسية — روابي الفرح"
+              className="group flex flex-col items-center justify-center focus:outline-none"
             >
               <span
-                className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-300 border-2 ${
+                style={{ backgroundImage: "url('/rwabifarah.png')" }}
+                className={`w-15 h-15 rounded-full bg-[#fdfaf5] dark:bg-[#1e150c] bg-cover bg-center border-[3px] border-solid border-orange-500 transition-all duration-300 ${
                   isHomeActive
-                    ? "bg-gradient-to-br from-amber-500 via-amber-600 to-amber-700 text-white border-[#fdfaf5] dark:border-[#161009] shadow-lg shadow-amber-600/40 scale-105"
-                    : "bg-gradient-to-br from-stone-800 to-stone-950 dark:from-amber-700/80 dark:to-amber-900 text-amber-100 border-[#fdfaf5] dark:border-[#161009] shadow-md hover:scale-105 hover:from-amber-500 hover:to-amber-700"
+                    ? "shadow-[0_0_20px_rgba(249,115,22,0.45)] ring-4 ring-orange-500/20 scale-105"
+                    : "shadow-lg shadow-orange-950/20 hover:scale-105 hover:shadow-[0_0_16px_rgba(249,115,22,0.35)]"
                 }`}
-              >
-                <Home className="w-6 h-6 transition-transform duration-200 group-hover:scale-110" />
-              </span>
+              />
               <span
                 className={`mt-1 text-[11px] font-extrabold transition-colors ${
                   isHomeActive
-                    ? "text-amber-700 dark:text-amber-400"
+                    ? "text-orange-600 dark:text-orange-400"
                     : "text-stone-600 dark:text-stone-400"
                 }`}
               >
