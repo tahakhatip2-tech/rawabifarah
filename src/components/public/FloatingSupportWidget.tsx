@@ -205,12 +205,12 @@ export default function FloatingSupportWidget() {
   }
 
   return (
-    <div dir="rtl" className="fixed bottom-4 left-4 sm:bottom-6 sm:left-6 z-40 flex flex-col items-start gap-3">
+    <div dir="rtl" className="fixed bottom-24 left-4 md:bottom-6 md:left-6 z-40 flex flex-col items-start gap-3">
       {/* Floating Smart Chat Drawer */}
       {isOpen && (
         <section
           aria-label="المساعد الذكي لمخابز روابي الفرح"
-          className="w-[calc(100vw-2rem)] sm:w-[390px] h-[520px] max-h-[calc(100vh-8.5rem)] rounded-3xl overflow-hidden bg-cream-50 dark:bg-stone-900 border border-amber-200/80 dark:border-stone-700 shadow-2xl flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200"
+          className="w-[calc(100vw-2rem)] sm:w-[390px] h-[520px] max-h-[calc(100vh-13rem)] md:max-h-[calc(100vh-8.5rem)] rounded-3xl overflow-hidden bg-cream-50 dark:bg-stone-900 border border-amber-200/80 dark:border-stone-700 shadow-2xl flex flex-col animate-in fade-in slide-in-from-bottom-4 duration-200"
         >
           {/* Header */}
           <div className="bg-gradient-to-l from-amber-600 via-amber-700 to-stone-900 text-white px-4 py-3.5 flex items-center justify-between gap-2 shrink-0">

@@ -107,13 +107,13 @@ export function Navbar() {
                 )}
               </button>
 
-              {/* Login / Admin Button */}
+              {/* Account / Login Button */}
               <Link
-                href="/login"
+                href="/account"
                 className="hide-mobile flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-bold text-xs shadow-md shadow-amber-600/20 transition-all hover:-translate-y-0.5"
               >
                 <User className="w-3.5 h-3.5" />
-                <span>دخول / الإدارة</span>
+                <span>حسابي / الدخول</span>
               </Link>
 
               {/* Mobile Hamburger Button */}
@@ -139,6 +139,7 @@ export function Navbar() {
             {[
               { href: "/", label: "الرئيسية" },
               { href: "/menu", label: "قائمة المخبوزات" },
+              { href: "/orders", label: "طلباتي" },
               { href: "/news", label: "آخر الأخبار" },
               { href: "/b2b", label: "توريد للمحلات والمطاعم" },
               { href: "/#branches", label: "فروعنا" },
@@ -153,11 +154,11 @@ export function Navbar() {
               </Link>
             ))}
             <Link
-              href="/login"
+              href="/account"
               onClick={() => setMobileMenuOpen(false)}
               className="mt-2 text-center py-2.5 rounded-xl bg-amber-600 text-white font-bold text-sm shadow-md transition"
             >
-              تسجيل الدخول / لوحة الإدارة
+              حسابي / تسجيل الدخول
             </Link>
           </div>
         )}

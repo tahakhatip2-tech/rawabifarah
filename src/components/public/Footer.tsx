@@ -5,7 +5,7 @@ import { MapPin, Phone, Mail, Clock, ShieldCheck } from "lucide-react";
 export function Footer() {
   return (
     <footer className="bg-[#f7efe1] text-stone-700 border-t border-amber-900/10 dark:bg-stone-950 dark:text-stone-300 dark:border-stone-800 transition-colors duration-300">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-28 lg:pt-16 lg:pb-28">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 lg:gap-12">
           {/* Brand info */}
           <div className="space-y-4">

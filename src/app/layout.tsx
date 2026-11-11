@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Cairo, Tajawal, Inter } from "next/font/google";
 import "./globals.css";
 import FloatingSupportWidget from "@/components/public/FloatingSupportWidget";
+import { BottomNavBar } from "@/components/public/BottomNavBar";
 
 // Arabic fonts
 const cairo = Cairo({
@@ -84,6 +85,7 @@ export default function RootLayout({
       <body className="antialiased">
         {children}
         <FloatingSupportWidget />
+        <BottomNavBar />
       </body>
     </html>
   );

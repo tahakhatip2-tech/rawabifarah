@@ -35,11 +35,14 @@ export default auth((req) => {
     "/wholesale",
     "/branches",
     "/news",
+    "/account",
+    "/orders",
     "/api/auth",
     "/api/products",
     "/api/categories",
     "/api/news",
     "/api/chat",
+    "/api/orders/track",
   ];
   const isPublic = publicPaths.some((p) => pathname === p || pathname.startsWith(p + "/"));
   if (isPublic) return NextResponse.next();
