@@ -235,6 +235,7 @@ model User {
   posSessions     POSSession[]
   stockMovements  StockMovement[]
   stockAdjustments StockAdjustment[]
+  newsPosts        NewsPost[]
 }
 
 // â•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گâ•گ
@@ -1159,3 +1160,58 @@ model SystemSetting {
   updatedAt   DateTime @updatedAt
 }
 
+
+
+// ============================================================
+// SOCIAL NEWS FEED & COMMUNITY
+// ============================================================
+
+enum NewsPostType {
+  TEXT
+  IMAGE
+  VIDEO
+  ARTICLE
+}
+
+model NewsPost {
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  authorId      String       @db.ObjectId
+  type          NewsPostType @default(TEXT)
+  title         String?
+  content       String
+  mediaUrl      String?
+  isPinned      Boolean      @default(false)
+  isPublished   Boolean      @default(true)
+  likesCount    Int          @default(0)
+  commentsCount Int          @default(0)
+  sharesCount   Int          @default(0)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  author        User         @relation(fields: [authorId], references: [id])
+  comments      NewsComment[]
+  likes         NewsLike[]
+}
+
+model NewsComment {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  postId       String   @db.ObjectId
+  userId       String?  @db.ObjectId
+  authorName   String
+  isAdminReply Boolean  @default(false)
+  content      String
+  createdAt    DateTime @default(now())
+
+  post         NewsPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+}
+
+model NewsLike {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  postId     String   @db.ObjectId
+  visitorKey String
+  createdAt  DateTime @default(now())
+
+  post       NewsPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, visitorKey])
+}

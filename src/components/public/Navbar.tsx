@@ -66,6 +66,7 @@ export function Navbar() {
               {[
                 { href: "/", label: "الرئيسية" },
                 { href: "/menu", label: "قائمة المخبوزات" },
+                { href: "/news", label: "آخر الأخبار" },
                 { href: "/#branches", label: "فروعنا" },
                 { href: "/#about", label: "عن المخبز" },
               ].map((item) => (
@@ -138,6 +139,7 @@ export function Navbar() {
             {[
               { href: "/", label: "الرئيسية" },
               { href: "/menu", label: "قائمة المخبوزات" },
+              { href: "/news", label: "آخر الأخبار" },
               { href: "/b2b", label: "توريد للمحلات والمطاعم" },
               { href: "/#branches", label: "فروعنا" },
             ].map((item) => (

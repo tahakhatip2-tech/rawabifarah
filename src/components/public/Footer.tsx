@@ -46,6 +46,11 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link href="/news" className="hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
+                  آخر الأخبار والمجتمع
+                </Link>
+              </li>
+              <li>
                 <Link href="/b2b" className="hover:text-amber-600 dark:hover:text-amber-400 transition-colors">
                   توريد للمحلات والمطاعم
                 </Link>

@@ -86,7 +86,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/employees", label: "الموظفون والدوام", icon: UserCog, soon: true },
       { href: "/admin/finance", label: "المالية والمصاريف", icon: Wallet, soon: true },
       { href: "/admin/reports", label: "التقارير والتحليلات", icon: BarChart3, soon: true },
-      { href: "/admin/cms", label: "إدارة المحتوى", icon: FileText, soon: true },
+      { href: "/admin/cms", label: "إدارة المحتوى والأخبار", icon: FileText },
       { href: "/admin/settings", label: "إعدادات النظام", icon: Settings, soon: true },
     ],
   },
