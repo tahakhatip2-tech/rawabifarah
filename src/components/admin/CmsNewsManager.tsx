@@ -45,8 +45,8 @@ const POST_TYPES: {
   icon: typeof FileText;
 }[] = [
   { value: "TEXT", label: "منشور نصي", desc: "خبر سريع أو إعلان", icon: Sparkles },
-  { value: "IMAGE", label: "صورة", desc: "منتج أو فعالية", icon: ImageIcon },
-  { value: "VIDEO", label: "فيديو", desc: "MP4 أو يوتيوب", icon: Video },
+  { value: "IMAGE", label: "صورة", desc: "صورة من الجهاز", icon: ImageIcon },
+  { value: "VIDEO", label: "فيديو", desc: "فيديو من الجهاز", icon: Video },
   { value: "ARTICLE", label: "مقالة", desc: "قصة أو وصفة مفصلة", icon: FileText },
 ];
 
@@ -72,6 +72,7 @@ export function CmsNewsManager({
   // UI feedback state
   const [submitting, setSubmitting] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [busyPostId, setBusyPostId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<{
     kind: "success" | "error";
@@ -156,46 +157,101 @@ export function CmsNewsManager({
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const maxBytes = 100 * 1024 * 1024; // 100 MB
+    if (file.size > maxBytes) {
+      setFeedback({
+        kind: "error",
+        text: "حجم الملف يتجاوز الحد المسموح (100 ميجابايت).",
+      });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setUploading(true);
+    setUploadProgress(0);
     setFeedback(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
+      // 1. Obtain short-lived Cloudinary signature (allows large videos directly from device)
+      const sigRes = await fetch("/api/upload", { method: "GET" });
+      const sigJson = await sigRes.json();
 
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-      const json = await res.json();
-
-      if (!res.ok || !json.success) {
+      if (!sigRes.ok || !sigJson.success) {
         setFeedback({
           kind: "error",
           text:
-            json.error ||
-            "تعذر رفع الملف مباشرة؛ يمكنك لصق رابط الصورة أو فيديو يوتيوب في الحقل المخصص.",
+            sigJson.error ||
+            "خدمة رفع الوسائط غير مفعلة حالياً. يرجى تفعيل متغيرات Cloudinary في إعدادات Vercel.",
         });
         return;
       }
 
-      setMediaUrl(json.data.url);
-      if (json.data.resourceType === "video") {
+      const { cloudName, apiKey, timestamp, folder, signature } = sigJson.data as {
+        cloudName: string;
+        apiKey: string;
+        timestamp: string;
+        folder: string;
+        signature: string;
+      };
+
+      const cloudinaryForm = new FormData();
+      cloudinaryForm.append("file", file);
+      cloudinaryForm.append("api_key", apiKey);
+      cloudinaryForm.append("timestamp", timestamp);
+      cloudinaryForm.append("folder", folder);
+      cloudinaryForm.append("signature", signature);
+
+      const uploadResult = await new Promise<{
+        secure_url: string;
+        resource_type: string;
+      }>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`);
+
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && event.total > 0) {
+            setUploadProgress(Math.round((event.loaded / event.total) * 100));
+          }
+        };
+
+        xhr.onload = () => {
+          try {
+            const parsed = JSON.parse(xhr.responseText);
+            if (xhr.status >= 200 && xhr.status < 300 && parsed.secure_url) {
+              resolve(parsed);
+            } else {
+              reject(new Error(parsed?.error?.message || "فشل رفع الملف إلى Cloudinary"));
+            }
+          } catch {
+            reject(new Error("استجابة غير متوقعة أثناء رفع الملف"));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("تعذر الاتصال بخدمة الرفع السحابي"));
+        xhr.send(cloudinaryForm);
+      });
+
+      setMediaUrl(uploadResult.secure_url);
+      if (uploadResult.resource_type === "video") {
         setType("VIDEO");
       } else if (type === "TEXT") {
         setType("IMAGE");
       }
       setFeedback({
         kind: "success",
-        text: "تم رفع الملف بنجاح وإدراج الرابط في المنشور.",
+        text: "تم رفع الملف من جهازك بنجاح وإرفاقه بالمنشور.",
       });
-    } catch {
+    } catch (err) {
       setFeedback({
         kind: "error",
-        text: "حدث خطأ أثناء رفع الملف. يمكنك استخدام رابط خارجي مباشرة.",
+        text:
+          err instanceof Error
+            ? err.message
+            : "حدث خطأ أثناء رفع الملف من الجهاز.",
       });
     } finally {
       setUploading(false);
+      setUploadProgress(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
       }
@@ -214,8 +270,8 @@ export function CmsNewsManager({
         kind: "error",
         text:
           type === "IMAGE"
-            ? "يرجى إدخال رابط الصورة أو رفع صورة لهذا النوع من المنشورات."
-            : "يرجى إدخال رابط الفيديو (MP4 أو يوتيوب) أو رفعه.",
+            ? "يرجى رفع صورة من جهازك لهذا النوع من المنشورات."
+            : "يرجى رفع فيديو من جهازك لهذا النوع من المنشورات.",
       });
       return;
     }
@@ -499,49 +555,109 @@ export function CmsNewsManager({
             />
           </div>
 
-          {/* Media URL + Upload */}
+          {/* Device Media Upload Only */}
           {(type === "IMAGE" || type === "VIDEO" || type === "ARTICLE") && (
-            <div className="space-y-2">
+            <div className="space-y-2.5">
               <label className="block text-xs font-bold text-stone-700 dark:text-stone-300">
                 {type === "VIDEO"
-                  ? "رابط الفيديو (يوتيوب أو MP4 مباشر) *"
+                  ? "رفع الفيديو من الجهاز *"
                   : type === "IMAGE"
-                  ? "رابط الصورة أو رفع ملف *"
-                  : "صورة غلاف المقالة (اختياري)"}
+                  ? "رفع الصورة من الجهاز *"
+                  : "رفع صورة غلاف للمقالة من الجهاز (اختياري)"}
               </label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  dir="ltr"
-                  value={mediaUrl}
-                  onChange={(e) => setMediaUrl(e.target.value)}
-                  placeholder={
-                    type === "VIDEO"
-                      ? "https://www.youtube.com/watch?v=... أو رابط MP4"
-                      : "https://... أو /images/..."
-                  }
-                  className="flex-1 px-3.5 py-2.5 rounded-xl border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-950 text-sm text-stone-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-                />
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept={type === "VIDEO" ? "video/*" : "image/*"}
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={type === "VIDEO" ? "video/*" : "image/*"}
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+
+              {mediaUrl ? (
+                <div className="rounded-2xl border border-amber-900/15 dark:border-stone-700 bg-stone-50 dark:bg-stone-950 p-3 space-y-3">
+                  <div className="overflow-hidden rounded-xl bg-black/5 dark:bg-black/40 border border-stone-200 dark:border-stone-800 max-h-60 flex items-center justify-center">
+                    {type === "VIDEO" ? (
+                      <video
+                        src={mediaUrl}
+                        controls
+                        className="w-full max-h-60 object-contain"
+                      />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={mediaUrl}
+                        alt="معاينة الملف المرفوع"
+                        className="w-full max-h-60 object-contain"
+                      />
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>تم إرفاق الملف بنجاح</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={uploading}
+                        onClick={() => fileInputRef.current?.click()}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-stone-200 hover:bg-stone-300 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 text-xs font-bold transition-colors disabled:opacity-50"
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        <span>تغيير الملف</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={uploading}
+                        onClick={() => setMediaUrl("")}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-950/70 text-red-700 dark:text-red-300 text-xs font-bold transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>إزالة</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
                 <button
                   type="button"
                   disabled={uploading}
                   onClick={() => fileInputRef.current?.click()}
-                  className="inline-flex items-center justify-center gap-1.5 px-4 py-2.5 rounded-xl bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 text-xs font-bold transition-colors disabled:opacity-50 shrink-0"
+                  className="w-full flex flex-col items-center justify-center gap-2 px-4 py-7 rounded-2xl border-2 border-dashed border-amber-500/40 hover:border-amber-600 bg-amber-50/40 hover:bg-amber-50 dark:bg-stone-950/60 dark:hover:bg-stone-950 transition-all text-center disabled:opacity-60"
                 >
-                  <Upload className="w-4 h-4" />
-                  <span>{uploading ? "جاري الرفع..." : "رفع ملف"}</span>
+                  <div className="w-11 h-11 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 flex items-center justify-center">
+                    {type === "VIDEO" ? (
+                      <Video className="w-5 h-5" />
+                    ) : (
+                      <Upload className="w-5 h-5" />
+                    )}
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-bold text-stone-800 dark:text-stone-200">
+                      {uploading
+                        ? `جاري الرفع من الجهاز... ${uploadProgress ?? 0}%`
+                        : type === "VIDEO"
+                        ? "اضغط لاختيار فيديو من جهازك"
+                        : "اضغط لاختيار صورة من جهازك"}
+                    </p>
+                    <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                      {type === "VIDEO"
+                        ? "صيغ MP4 / MOV / WEBM — حتى 100 ميجابايت"
+                        : "صيغ JPG / PNG / WEBP — من الهاتف أو الكمبيوتر"}
+                    </p>
+                  </div>
+                  {uploading && uploadProgress !== null && (
+                    <div className="w-full max-w-xs h-2 rounded-full bg-stone-200 dark:bg-stone-800 overflow-hidden mt-1">
+                      <div
+                        className="h-full bg-amber-600 transition-all duration-150"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  )}
                 </button>
-              </div>
-              <p className="text-[11px] text-stone-500 dark:text-stone-400">
-                يدعم روابط الصور المباشرة وروابط YouTube / Shorts / MP4، أو الرفع عبر Cloudinary إن كان مفعّلاً.
-              </p>
+              )}
             </div>
           )}
 
