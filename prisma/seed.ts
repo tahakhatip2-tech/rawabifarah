@@ -122,6 +122,66 @@ async function main() {
     console.log(`✅ User: ${u.email} (${u.role}) — password: ${u.password}`);
   }
 
+  // ── Employees (linked to staff users) ─────────────────────
+  const staffEmployees = [
+    {
+      id: "000000000000000000000112",
+      userId: "000000000000000000000012",
+      nameAr: "محمد علي السالم",
+      nameEn: "Mohammad Ali",
+      phone: "0799000012",
+      jobTitle: "مدير الفرع الرئيسي",
+      department: "الإدارة والإشراف",
+      employmentType: "FULL_TIME",
+      baseSalary: 850,
+    },
+    {
+      id: "000000000000000000000113",
+      userId: "000000000000000000000013",
+      nameAr: "سارة خالد الحسن",
+      nameEn: "Sara Khaled",
+      phone: "0799000013",
+      jobTitle: "مسؤولة الكاشير والمبيعات",
+      department: "نقاط البيع والكاشير",
+      employmentType: "SHIFT",
+      baseSalary: 420,
+    },
+    {
+      id: "000000000000000000000114",
+      userId: "000000000000000000000014",
+      nameAr: "عمر يوسف المصري",
+      nameEn: "Omar Yousef",
+      phone: "0799000014",
+      jobTitle: "أمين المستودع",
+      department: "المستودع والإمداد",
+      employmentType: "FULL_TIME",
+      baseSalary: 480,
+    },
+  ];
+
+  for (const emp of staffEmployees) {
+    await prisma.employee.upsert({
+      where: { userId: emp.userId },
+      update: {},
+      create: {
+        id: emp.id,
+        userId: emp.userId,
+        businessId: business.id,
+        branchId: branch.id,
+        nameAr: emp.nameAr,
+        nameEn: emp.nameEn,
+        phone: emp.phone,
+        jobTitle: emp.jobTitle,
+        department: emp.department,
+        employmentType: emp.employmentType,
+        startDate: new Date("2025-01-01T00:00:00.000Z"),
+        baseSalary: emp.baseSalary,
+        isActive: true,
+      },
+    });
+  }
+  console.log("✅ Staff employees seeded:", staffEmployees.length);
+
   // ── Product Categories ────────────────────────────────────
   const categories = [
     { id: "000000000000000000000020", nameAr: "المعجنات", nameEn: "Pastries", slug: "pastries" },

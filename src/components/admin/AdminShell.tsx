@@ -85,7 +85,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: "الإدارة والتقارير",
     items: [
       { href: "/admin/customers", label: "العملاء والولاء", icon: Users, soon: true },
-      { href: "/admin/employees", label: "الموظفون والدوام", icon: UserCog, soon: true },
+      { href: "/admin/employees", label: "الموظفون والدوام", icon: UserCog },
       { href: "/admin/finance", label: "المالية والمصاريف", icon: Wallet, soon: true },
       { href: "/admin/reports", label: "التقارير والتحليلات", icon: BarChart3, soon: true },
       { href: "/admin/cms", label: "إدارة المحتوى والأخبار", icon: FileText },
